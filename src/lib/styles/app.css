@@ -1,0 +1,58 @@
+@import 'tailwindcss';
+
+/*
+ * ============================================
+ * COLOR SYSTEM — Design Tokens (Tailwind v4)
+ * Generated from Figma Design System
+ * ============================================
+ */
+
+@theme {
+
+   /* Primary - Red */
+  --color-primary-10: #CC11001A; /* primary-600 at 10% opacity */
+  --color-primary-100: #FFD0CC;
+  --color-primary-200: #FFA299;
+  --color-primary-300: #FF7366;
+  --color-primary-400: #FF4433;
+  --color-primary-500: #FF1500;
+  --color-primary-600: #CC1100;
+  --color-primary-700: #990D00;
+
+   /* Secondary - Gold */
+  --color-secondary-10: #F59F0A1A; /* secondary-500 at 10% opacity */
+  --color-secondary-100: #FDECCE;
+  --color-secondary-200: #FBD99D;
+  --color-secondary-300: #F9C56C;
+  --color-secondary-400: #F7B23B;
+  --color-secondary-500: #F59F0A;
+  --color-secondary-600: #C47F08;
+  --color-secondary-700: #935F06;
+
+   /* Neutral - Gray */
+  --color-neutral-50: #F1F1F4;
+  --color-neutral-100: #E2E2E9;
+  --color-neutral-200: #C6C6D2;
+  --color-neutral-300: #A9A9BC;
+  --color-neutral-400: #8D8DA5;
+  --color-neutral-500: #70708F;
+  --color-neutral-600: #5A5A72;
+  --color-neutral-700: #434356;
+  --color-neutral-800: #2D2D39;
+  --color-neutral-900: #16161D;
+
+   /* Feedback - Error */
+  --color-error-10: #D904291A; /* error-100 at 10% opacity */
+  --color-error-100: #D90429;
+  --color-error-200: #9E001A;
+
+   /* Feedback - Warning */
+  --color-warning-10: #F6BB091A; /* warning-100 at 10% opacity */
+  --color-warning-100: #F6BB09;
+  --color-warning-200: #947005;
+
+   /* Feedback - Success */
+  --color-success-10: #10B9811A; /* success-100 at 10% opacity */
+  --color-success-100: #10B981;
+  --color-success-200: #047857;
+}
