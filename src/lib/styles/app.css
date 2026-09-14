@@ -55,41 +55,41 @@
   
 /* Typography */
 
-  --font-family-outfit: "Outfit", sans-serif;
+  --font-outfit: "Outfit", sans-serif;
 
-  --font-size-h1: 68px;
-  --font-size-h1--line-height: 102px;
+  --text-h1: 68px;
+  --text-h1--line-height: 102px;
 
-  --font-size-h2: 56px;
-  --font-size-h2--line-height: 84px;
+  --text-h2: 56px;
+  --text-h2--line-height: 84px;
 
-  --font-size-h3: 46px;
-  --font-size-h3--line-height: 69px;
+  --text-h3: 46px;
+  --text-h3--line-height: 69px;
 
-  --font-size-h4: 38px;
-  --font-size-h4--line-height: 57px;
+  --text-h4: 38px;
+  --text-h4--line-height: 57px;
 
-  --font-size-h5: 32px;
-  --font-size-h5--line-height: 48px;
+  --text-h5: 32px;
+  --text-h5--line-height: 48px;
 
-  --font-size-h6: 26px;
-  --font-size-h6--line-height: 39px;
+  --text-h6: 26px;
+  --text-h6--line-height: 39px;
 
-  --font-size-h7: 22px;
-  --font-size-h7--line-height: 33px;
+  --text-h7: 22px;
+  --text-h7--line-height: 33px;
 
-  --font-size-body-1: 18px;
-  --font-size-body-1--line-height: 27px;
+  --text-body-1: 18px;
+  --text-body-1--line-height: 27px;
 
-  --font-size-body-2: 16px;
-  --font-size-body-2--line-height: 24px;
+  --text-body-2: 16px;
+  --text-body-2--line-height: 24px;
 
-  --font-size-body-3: 14px;
-  --font-size-body-3--line-height: 21px;
+  --text-body-3: 14px;
+  --text-body-3--line-height: 21px;
 
-  --font-size-body-4: 12px;
-  --font-size-body-4--line-height: 18px;
+  --text-body-4: 12px;
+  --text-body-4--line-height: 18px;
 
-  --font-size-body-5: 10px;
-  --font-size-body-5--line-height: 15px;
+  --text-body-5: 10px;
+  --text-body-5--line-height: 15px;
 }
