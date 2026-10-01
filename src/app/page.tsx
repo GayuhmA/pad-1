@@ -88,7 +88,7 @@ export default function HomePage() {
             </p>
           </div>
 
-          <div className="relative bg-white w-full rounded-lg p-10 md:p-16 overflow-hidden flex items-center">
+          <div className="relative bg-white w-full min-h-100 rounded-lg p-10 md:p-16 overflow-hidden flex items-center">
             <div className="relative z-10">
               <h1 className="text-[40px] md:text-[68px] leading-tight text-neutral-900 font-bold mb-4">
                 Semarak HUT RI <span className="text-primary-600">ke-81</span>
@@ -149,7 +149,7 @@ export default function HomePage() {
           </div>
         </section>
 
-        <section>
+        <section className="mt-10">
           <div className="flex items-center gap-3 mb-6">
             <Image src="/icons/alert.svg" alt="Alert" width={28} height={28} />
             <h2 className="text-h6 text-primary-600 font-bold">
