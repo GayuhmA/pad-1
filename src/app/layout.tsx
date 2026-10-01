@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import { Navbar } from '@/components/Navbar';
+import { Footer } from '@/components/Footer';
 
 export const metadata: Metadata = {
   title: 'PAD',
@@ -18,6 +19,7 @@ export default function RootLayout({
         <div className="min-h-screen bg-neutral-50 flex flex-col font-outfit">
           <Navbar />
           <main className="grow">{children}</main>
+          <Footer />
         </div>
       </body>
     </html>
