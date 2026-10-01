@@ -30,12 +30,13 @@ export function Navbar() {
               width={80}
               height={80}
               className="h-20 w-auto object-contain"
+              priority
             />
           </Link>
         </div>
 
         {/* Nav Items */}
-        <div className="hidden lg:flex w-175 h-18 bg-neutral-100 rounded-[10px] items-center justify-between px-3 shrink-0">
+        <div className="hidden lg:flex items-center gap-2 shrink-0">
           {navItems.map((item) => {
             const isActive = pathname === item.href;
             return isActive ? (
@@ -48,7 +49,7 @@ export function Navbar() {
                 className="bg-primary-100! text-primary-600! relative overflow-hidden"
               >
                 <span className="text-h7! font-bold invisible" aria-hidden="true">{item.name}</span>
-                <span className="absolute inset-0 flex items-center justify-center text-h7! font-bold">{item.name}</span>
+                <span className="absolute inset-0 flex items-center justify-center text-body-1! font-bold">{item.name}</span>
               </Button>
             ) : (
               <Button
@@ -60,7 +61,7 @@ export function Navbar() {
                 className="text-primary-600! hover:bg-primary-10! relative overflow-hidden"
               >
                 <span className="text-h7! font-bold invisible" aria-hidden="true">{item.name}</span>
-                <span className="absolute inset-0 flex items-center justify-center text-body-1! font-bold transition-all">{item.name}</span>
+                <span className="absolute inset-0 flex items-center justify-center text-body-1! font-semibold transition-all">{item.name}</span>
               </Button>
             );
           })}
@@ -73,7 +74,7 @@ export function Navbar() {
           </button>
           <button className="w-12 h-12 rounded-full border border-neutral-200 overflow-hidden bg-white flex items-center justify-center shrink-0">
             <Image
-              src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix&backgroundColor=F1F1F4"
+              src="https://placecats.com/neo/100/100"
               alt="Profile"
               width={48}
               height={48}
