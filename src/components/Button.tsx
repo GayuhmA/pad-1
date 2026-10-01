@@ -1,29 +1,25 @@
-<script lang="ts">
-  import type { Snippet } from 'svelte';
-  import type { HTMLButtonAttributes } from 'svelte/elements';
+import { type ButtonHTMLAttributes } from 'react';
 
-  interface Props extends HTMLButtonAttributes {
-    size?: 'S' | 'M' | 'L';
-    variant?: 'solid' | 'line' | 'ghost';
-    color?: 'primary' | 'yellow' | 'neutral';
-    icon?: Snippet;
-    children?: Snippet;
-  }
+interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  size?: 'S' | 'M' | 'L';
+  variant?: 'solid' | 'line' | 'ghost';
+  color?: 'primary' | 'yellow' | 'neutral';
+  icon?: React.ReactNode;
+}
 
-  let { 
-    size = 'M', 
-    variant = 'solid',
-    color = 'primary',
-    icon,
-    children, 
-    class: className = '', 
-    disabled, 
-    type = 'button',
-    ...rest 
-  }: Props = $props();
-
+export function Button({
+  size = 'M',
+  variant = 'solid',
+  color = 'primary',
+  icon,
+  children,
+  className = '',
+  disabled,
+  type = 'button',
+  ...rest
+}: ButtonProps) {
   const baseStyles = 'inline-flex items-center justify-center font-outfit transition-all duration-200 cursor-pointer disabled:cursor-not-allowed disabled:shadow-none';
-  
+
   const colorStyles = {
     solid: {
       primary: 'bg-primary-600 text-white enabled:hover:bg-primary-600 enabled:hover:shadow-[inset_0px_6px_10px_rgba(0,0,0,0.4)] enabled:active:bg-primary-700 enabled:active:shadow-none disabled:bg-neutral-300 disabled:text-neutral-50 disabled:border-transparent',
@@ -59,16 +55,16 @@
       L: 'min-w-[112px] h-[48px] rounded-[10px] gap-[10px] py-[12px] px-[20px] text-body-1',
     }
   };
-</script>
 
-<button
-  {type}
-  class="{baseStyles} {colorStyles[variant][color]} {sizeStyles[variant][size]} {className}"
-  {disabled}
-  {...rest}
->
-  {#if icon}
-    {@render icon()}
-  {/if}
-  {@render children?.()}
-</button>
+  return (
+    <button
+      type={type}
+      className={`${baseStyles} ${colorStyles[variant][color]} ${sizeStyles[variant][size]} ${className}`}
+      disabled={disabled}
+      {...rest}
+    >
+      {icon && icon}
+      {children}
+    </button>
+  );
+}
