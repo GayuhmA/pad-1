@@ -19,3 +19,7 @@ Thumbs.db
 
 # TypeScript
 next-env.d.ts
+
+# Build info
+tsconfig.tsbuildinfo
+
