@@ -2,7 +2,7 @@ import { type HTMLAttributes } from 'react';
 
 interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
   variant?: 'solid' | 'soft';
-  color?: 'primary' | 'secondary' | 'neutral';
+  color?: 'primary' | 'secondary' | 'neutral' | 'success';
 }
 
 export function Badge({
@@ -19,11 +19,13 @@ export function Badge({
       primary: 'bg-primary-500 text-white',
       secondary: 'bg-secondary-500 text-white',
       neutral: 'bg-neutral-500 text-white',
+      success: 'bg-[#04C065] text-white',
     },
     soft: {
       primary: 'bg-primary-100 text-primary-500',
       secondary: 'bg-secondary-100 text-secondary-500',
       neutral: 'bg-neutral-100 text-neutral-600',
+      success: 'bg-green-100 text-green-700',
     }
   };
 
