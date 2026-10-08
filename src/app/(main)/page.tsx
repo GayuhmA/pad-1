@@ -40,35 +40,44 @@ const sedangBerlangsung = [
 const agenda = [
   {
     id: 1,
-    time: "09:00 - 11:30 WIB",
+    date: "16 Agustus 2026",
+    time: "09:30 - 11:30",
     category: "Dewasa",
     title: "Futsal Sarung",
     location: "Lapangan Utara",
     icon: "/icons/workout.svg",
     iconBg: "bg-primary-100",
+    nb: "NB: Peserta diwajibkan hadir 15 menit sebelum pertandingan. Silakan cek bagan pertandingan pada papan informasi di sebelah timur lapangan.",
   },
   {
     id: 2,
-    time: "09:30 - 11:00 WIB",
+    date: "16 Agustus 2026",
+    time: "09:30 - 11:00",
     category: "Umum",
     title: "Makan Kerupuk",
     location: "Depan Pendopo",
     icon: "/icons/flag.svg",
     iconBg: "bg-secondary-100",
+    nb: "NB: Peserta diharapkan membawa air minum masing-masing.",
   },
   {
     id: 3,
-    time: "13:00 - 15:00 WIB",
+    date: "16 Agustus 2026",
+    time: "13:00 - 15:00",
     category: "Anak-anak",
     title: "Mewarnai",
     location: "Aula Balai Desa",
     icon: "/icons/night.svg",
     iconBg: "bg-primary-100",
+    nb: "NB: Alat mewarnai sudah disediakan panitia. Peserta diperbolehkan membawa meja lipat sendiri.",
   },
 ];
 
+import { Modal } from "@/components/Modal";
+
 export default function HomePage() {
   const [activeTab, setActiveTab] = useState("Besok");
+  const [selectedAgenda, setSelectedAgenda] = useState<typeof agenda[0] | null>(null);
   const tabs = ["Hari Ini", "Besok", "17 Agustus"];
 
   return (
@@ -263,7 +272,7 @@ export default function HomePage() {
                   </p>
                 </div>
                 <div className="shrink-0 font-bold flex justify-center md:block">
-                  <Button variant="ghost" color="primary" size="M">
+                  <Button variant="ghost" color="primary" size="M" onClick={() => setSelectedAgenda(item)}>
                     Lihat Detail{" "}
                     <Image
                       src="/icons/round-arrow-right.svg"
@@ -279,6 +288,47 @@ export default function HomePage() {
         </section>
 
       </div>
+
+      <Modal isOpen={!!selectedAgenda} onClose={() => setSelectedAgenda(null)}>
+        {selectedAgenda && (
+          <div className="p-10 flex flex-col gap-6">
+            <h2 className="text-h4 font-bold text-primary-600 text-center mb-2">
+              {selectedAgenda.title}
+            </h2>
+
+            <div className="flex flex-col gap-2">
+              <span className="text-body-2 font-bold text-primary-600">Tanggal</span>
+              <div className="bg-neutral-50 px-5 py-3 rounded-xl">
+                <p className="text-body-1 font-bold text-neutral-900">{selectedAgenda.date}</p>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <span className="text-body-2 font-bold text-primary-600">Waktu</span>
+              <div className="bg-neutral-50 px-5 py-3 rounded-xl">
+                <p className="text-body-1 font-bold text-neutral-900">{selectedAgenda.time}</p>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <span className="text-body-2 font-bold text-primary-600">Lokasi</span>
+              <div className="bg-neutral-50 px-5 py-3 rounded-xl">
+                <p className="text-body-1 font-bold text-neutral-900">{selectedAgenda.location}</p>
+              </div>
+            </div>
+
+            {selectedAgenda.nb && (
+              <div className="bg-neutral-50 px-5 py-6 rounded-xl mt-2 relative overflow-hidden">
+                <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-primary-600 rounded-l-xl"></div>
+                <p className="text-body-3 text-neutral-900 font-medium leading-relaxed">
+                  {selectedAgenda.nb}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
+
     </div>
   );
 }
