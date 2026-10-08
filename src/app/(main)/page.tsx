@@ -22,8 +22,8 @@ const sedangBerlangsung = [
     title: "Tarik Tambang",
     team1: "Regu Ketoprak Sedap Malam",
     team2: "Regu Nasi Padang Murah",
-    badgeVariant: "soft",
-    badgeColor: "secondary",
+    badgeVariant: "soft" as const,
+    badgeColor: "secondary" as const,
   },
   {
     id: 2,
@@ -32,8 +32,8 @@ const sedangBerlangsung = [
     title: "Catur",
     team1: "Bapak Setiawan Raharja",
     team2: "Bapak Rendra Hariyanto",
-    badgeVariant: "soft",
-    badgeColor: "primary",
+    badgeVariant: "soft" as const,
+    badgeColor: "primary" as const,
   },
 ];
 
@@ -165,8 +165,8 @@ export default function HomePage() {
               >
                 <div className="flex items-center justify-between">
                   <Badge
-                    variant={item.badgeVariant as any}
-                    color={item.badgeColor as any}
+                    variant={item.badgeVariant}
+                    color={item.badgeColor}
                   >
                     {item.status}
                   </Badge>

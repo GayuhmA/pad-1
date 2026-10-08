@@ -43,8 +43,11 @@ export async function apiRequest<T>(
   { body, authenticated = false, headers: extraHeaders, ...init }: RequestOptions = {},
 ): Promise<T> {
   const headers = new Headers(extraHeaders);
-  headers.set('Content-Type', 'application/json');
   headers.set('Accept', 'application/json');
+
+  if (body) {
+    headers.set('Content-Type', 'application/json');
+  }
 
   if (authenticated) {
     const token = getStoredToken();
@@ -60,14 +63,27 @@ export async function apiRequest<T>(
   });
 
   const text = await response.text();
-  const data = text ? JSON.parse(text) : null;
+  let data: unknown = null;
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      if (!response.ok) {
+        throw new ApiRequestError(
+          `Request failed with status ${response.status}`,
+          response.status,
+          text,
+        );
+      }
+    }
+  }
 
   if (!response.ok) {
-    throw new ApiRequestError(
-      data?.message ?? `Request failed with status ${response.status}`,
-      response.status,
-      data,
-    );
+    const errorMessage =
+      (data && typeof data === 'object' && 'message' in data)
+        ? String((data as Record<string, unknown>).message)
+        : `Request failed with status ${response.status}`;
+    throw new ApiRequestError(errorMessage, response.status, data);
   }
 
   return data as T;

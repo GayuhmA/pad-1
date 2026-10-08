@@ -4,6 +4,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { Button } from '@/components/Button';
+import { useAppStore } from '@/stores/app-store';
 
 const navItems = [
   { name: 'Beranda', href: '/' },
@@ -16,6 +17,7 @@ const navItems = [
 export function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
+  const { isMobileMenuOpen, toggleMobileMenu, closeMobileMenu } = useAppStore();
 
   return (
     <header className="w-full bg-white flex justify-center sticky top-0 z-50">
@@ -84,16 +86,58 @@ export function Navbar() {
           </button>
 
           {/* Hamburger (mobile) */}
-          <button className="lg:hidden p-2 text-neutral-600 hover:bg-neutral-100 rounded-lg" aria-label="Buka Menu">
-            <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="4" x2="20" y1="12" y2="12"/>
-              <line x1="4" x2="20" y1="6" y2="6"/>
-              <line x1="4" x2="20" y1="18" y2="18"/>
-            </svg>
+          <button
+            className="lg:hidden p-2 text-neutral-600 hover:bg-neutral-100 rounded-lg"
+            aria-label={isMobileMenuOpen ? 'Tutup Menu' : 'Buka Menu'}
+            onClick={toggleMobileMenu}
+          >
+            {isMobileMenuOpen ? (
+              <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" x2="6" y1="6" y2="18"/>
+                <line x1="6" x2="18" y1="6" y2="18"/>
+              </svg>
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="4" x2="20" y1="12" y2="12"/>
+                <line x1="4" x2="20" y1="6" y2="6"/>
+                <line x1="4" x2="20" y1="18" y2="18"/>
+              </svg>
+            )}
           </button>
         </div>
 
       </nav>
+
+      {isMobileMenuOpen && (
+        <div className="lg:hidden fixed inset-0 top-28 z-40">
+          <div
+            className="absolute inset-0 bg-black/30"
+            onClick={closeMobileMenu}
+          />
+
+          <div className="relative bg-white border-t border-neutral-100 shadow-lg">
+            <div className="flex flex-col p-4 gap-1">
+              {navItems.map((item) => {
+                const isActive = pathname === item.href;
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={closeMobileMenu}
+                    className={`px-5 py-3.5 rounded-xl text-body-1 font-semibold transition-colors ${
+                      isActive
+                        ? 'bg-primary-100 text-primary-600 font-bold'
+                        : 'text-neutral-600 hover:bg-neutral-50'
+                    }`}
+                  >
+                    {item.name}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
     </header>
   );
 }

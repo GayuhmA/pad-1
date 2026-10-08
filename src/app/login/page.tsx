@@ -17,10 +17,9 @@ export default function LoginPage() {
     e.preventDefault();
     try {
       await login(username, password);
-      console.log("Username yang login:", username);
       router.replace("/");
     } catch {
-
+      
     }
   };
 
@@ -30,7 +29,7 @@ export default function LoginPage() {
       <div className="hidden lg:flex items-center justify-center relative">
       </div>
 
-      <div className="flex items-center justify-center p-6">
+      <div className="flex items-center justify-center p-6 z-20">
         <div className="w-full max-w-120 bg-linear-to-b from-primary-100 via-white to-white flex flex-col items-center rounded-3xl shadow-2xl overflow-hidden pb-12 pt-8 relative">
           
           <div className="w-full mb-6 opacity-80 mix-blend-multiply">
@@ -118,7 +117,7 @@ export default function LoginPage() {
         </div>
       </div>
 
-      <div className="absolute -bottom-10 -left-10 lg:-left-20 lg:bottom-0 w-full max-w-300 z-20 pointer-events-none">
+      <div className="absolute -bottom-10 -left-10 lg:-left-20 lg:bottom-0 w-full max-w-300 z-10 pointer-events-none">
         <Image src="/images/login/flag.png" alt="Flag Bottom" width={1200} height={600} className="w-full h-auto object-contain" />
       </div>
 

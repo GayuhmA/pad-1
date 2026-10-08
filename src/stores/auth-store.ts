@@ -16,6 +16,7 @@ interface AuthState {
   isLoading: boolean;
   error: string | null;
 
+  hydrate: () => void;
   login: (username: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   fetchUser: () => Promise<void>;
@@ -25,9 +26,16 @@ interface AuthState {
 
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
-  token: getStoredToken(),
+  token: null,
   isLoading: false,
   error: null,
+
+  hydrate: () => {
+    const token = getStoredToken();
+    if (token) {
+      set({ token });
+    }
+  },
 
   login: async (username, password) => {
     set({ isLoading: true, error: null });
@@ -56,14 +64,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   fetchUser: async () => {
+    if (!get().token) {
+      get().hydrate();
+    }
+
     const { token, user: existingUser } = get();
     if (!token || existingUser) return;
 
     set({ isLoading: true });
     try {
       const data = await authApi.getMe();
-      const user = data.user ?? (data as unknown as Record<string, unknown>).data ?? data;
-      set({ user: user as User, isLoading: false });
+      set({ user: data.user, isLoading: false });
     } catch {
       removeStoredToken();
       set({ user: null, token: null, isLoading: false });
@@ -72,3 +83,4 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   clearError: () => set({ error: null }),
 }));
+
