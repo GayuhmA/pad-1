@@ -74,15 +74,11 @@ export function Navbar() {
           <button className="relative hover:bg-neutral-100 p-2 rounded-full transition-colors flex items-center justify-center">
             <Image src="/icons/notification.svg" alt="Notification" width={28} height={28} className="w-7 h-7" />
           </button>
-          <button className="w-12 h-12 rounded-full border border-neutral-200 overflow-hidden bg-white flex items-center justify-center shrink-0">
-            <Image
-              src="https://placecats.com/neo/100/100"
-              alt="Profile"
-              width={48}
-              height={48}
-              className="w-full h-full object-cover"
-              unoptimized
-            />
+          <button className="w-12 h-12 rounded-full border border-neutral-200 overflow-hidden bg-neutral-100 flex items-center justify-center shrink-0 text-neutral-400 hover:bg-neutral-200 transition-colors">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+              <circle cx="12" cy="7" r="4"></circle>
+            </svg>
           </button>
 
           {/* Hamburger (mobile) */}
