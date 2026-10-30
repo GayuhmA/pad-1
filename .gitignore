@@ -23,3 +23,7 @@ next-env.d.ts
 # Build info
 tsconfig.tsbuildinfo
 
+# Local MCP Configurations
+.agents/**/mcp_config.json
+.cursor/mcp.json
+

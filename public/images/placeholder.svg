@@ -1,0 +1,18 @@
+<svg width="400" height="250" viewBox="0 0 400 250" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="400" height="250" fill="#E2E2E9"/>
+  <!-- Decorative background elements -->
+  <circle cx="200" cy="110" r="42" fill="#D2D2DC"/>
+  <!-- Image / Gallery Icon -->
+  <path d="M182 124L194 108L212 130H180L182 124Z" fill="#8E8DA5"/>
+  <path d="M206 122L213 113L225 130H200L206 122Z" fill="#A0A0BC"/>
+  <circle cx="188" cy="98" r="5" fill="#8E8DA5"/>
+  <rect x="172" y="80" width="56" height="56" rx="8" stroke="#8E8DA5" stroke-width="3" stroke-dasharray="4 4"/>
+  <!-- Label Text -->
+  <text x="200" y="168" text-anchor="middle" fill="#70708F" font-family="Outfit, sans-serif" font-size="13" font-weight="600" letter-spacing="0.5">
+    Foto Dokumentasi
+  </text>
+  <text x="200" y="186" text-anchor="middle" fill="#A0A0BC" font-family="Outfit, sans-serif" font-size="11" font-weight="500">
+    HUT RI 81
+  </text>
+</svg>
+
