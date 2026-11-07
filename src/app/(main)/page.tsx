@@ -1,334 +1,342 @@
 "use client";
 
-import React, { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
-import { Button } from "@/components/Button";
 import { Badge } from "@/components/Badge";
-
-const pengumuman = {
-  badge: "Pengumuman Terbaru",
-  date: "15 Agustus, 02:14 WIB",
-  title: "Panggilan Babak Penyisihan Tarik Tambang!",
-  description:
-    "Regu anda (Ketoprak Sedap Malam RT 07) dijadwalkan bertanding dengan RT 09 di lapangan utara pada pukul ...",
-  link: "#",
-};
-
-const sedangBerlangsung = [
-  {
-    id: 1,
-    status: "Penyisihan",
-    location: "Lapangan Timur",
-    title: "Tarik Tambang",
-    team1: "Regu Ketoprak Sedap Malam",
-    team2: "Regu Nasi Padang Murah",
-    badgeVariant: "soft" as const,
-    badgeColor: "secondary" as const,
-  },
-  {
-    id: 2,
-    status: "Final",
-    location: "Balai Desa",
-    title: "Catur",
-    team1: "Bapak Setiawan Raharja",
-    team2: "Bapak Rendra Hariyanto",
-    badgeVariant: "soft" as const,
-    badgeColor: "primary" as const,
-  },
-];
-
-const agenda = [
-  {
-    id: 1,
-    date: "16 Agustus 2026",
-    time: "09:30 - 11:30",
-    category: "Dewasa",
-    title: "Futsal Sarung",
-    location: "Lapangan Utara",
-    icon: "/icons/workout.svg",
-    iconBg: "bg-primary-100",
-    nb: "NB: Peserta diwajibkan hadir 15 menit sebelum pertandingan. Silakan cek bagan pertandingan pada papan informasi di sebelah timur lapangan.",
-  },
-  {
-    id: 2,
-    date: "16 Agustus 2026",
-    time: "09:30 - 11:00",
-    category: "Umum",
-    title: "Makan Kerupuk",
-    location: "Depan Pendopo",
-    icon: "/icons/flag.svg",
-    iconBg: "bg-secondary-100",
-    nb: "NB: Peserta diharapkan membawa air minum masing-masing.",
-  },
-  {
-    id: 3,
-    date: "16 Agustus 2026",
-    time: "13:00 - 15:00",
-    category: "Anak-anak",
-    title: "Mewarnai",
-    location: "Aula Balai Desa",
-    icon: "/icons/night.svg",
-    iconBg: "bg-primary-100",
-    nb: "NB: Alat mewarnai sudah disediakan panitia. Peserta diperbolehkan membawa meja lipat sendiri.",
-  },
-];
-
+import { Button } from "@/components/Button";
 import { Modal } from "@/components/Modal";
+import { PageSkeleton } from "@/components/skeletons/PageSkeleton";
+import { getBeranda } from "@/lib/api/beranda";
+import { ApiRequestError } from "@/lib/api/client";
+import { useAuthStore } from "@/stores/auth-store";
+import type { BerandaAgenda, BerandaData } from "@/types/beranda";
+
+const dateFormatter = new Intl.DateTimeFormat("id-ID", {
+  day: "numeric",
+  month: "long",
+  year: "numeric",
+  timeZone: "Asia/Jakarta",
+});
+const tabDateFormatter = new Intl.DateTimeFormat("id-ID", {
+  day: "numeric",
+  month: "long",
+  timeZone: "Asia/Jakarta",
+});
+const eventDays = [15, 16, 17] as const;
+const fallbackAgendaVisuals = [
+  { icon: "/icons/workout.svg", background: "bg-primary-100" },
+  { icon: "/icons/flag.svg", background: "bg-secondary-100" },
+  { icon: "/icons/groups.svg", background: "bg-neutral-100" },
+  { icon: "/icons/night.svg", background: "bg-primary-100" },
+] as const;
+
+function formatDate(value: string) {
+  const date = new Date(`${value}T00:00:00+07:00`);
+  return Number.isNaN(date.getTime()) ? value : dateFormatter.format(date);
+}
+
+function formatTabDate(value: string) {
+  const date = new Date(`${value}T00:00:00+07:00`);
+  return Number.isNaN(date.getTime()) ? value : tabDateFormatter.format(date);
+}
+
+function eventDates(year: string) {
+  return eventDays.map((day) => `${year}-08-${day}`);
+}
+
+function jakartaToday() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    timeZone: "Asia/Jakarta",
+  }).formatToParts(new Date());
+  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${value.year}-${value.month}-${value.day}`;
+}
+
+function initialAgendaDate() {
+  const today = jakartaToday();
+  const dates = eventDates(today.slice(0, 4));
+  return dates.includes(today) ? today : dates.find((date) => date > today) ?? dates.at(-1)!;
+}
+
+function formatClock(value: string) {
+  const match = value.match(/(?:^| )(\d{2}):(\d{2})/);
+  return match ? `${match[1]}:${match[2]}` : value;
+}
+
+function formatPublishedAt(value: string) {
+  const [date, time] = value.split(" ");
+  if (!date || !time) return value;
+  return `${formatDate(date)}, ${formatClock(time)} WIB`;
+}
+
+function agendaTime(item: BerandaAgenda) {
+  return `${formatClock(item.waktu_mulai)} - ${formatClock(item.waktu_selesai)}`;
+}
+
+function agendaVisual(item: BerandaAgenda) {
+  const name = item.nama_lomba.toLocaleLowerCase("id-ID");
+  if (name.includes("futsal")) return fallbackAgendaVisuals[0];
+  if (name.includes("makan kerupuk")) return fallbackAgendaVisuals[1];
+  if (name.includes("tarik tambang") || name.includes("estafet")) return fallbackAgendaVisuals[2];
+  if (name.includes("mewarnai") || name.includes("catur")) return fallbackAgendaVisuals[3];
+  return fallbackAgendaVisuals[Math.abs(item.id_lomba) % fallbackAgendaVisuals.length];
+}
 
 export default function HomePage() {
-  const [activeTab, setActiveTab] = useState("Besok");
-  const [selectedAgenda, setSelectedAgenda] = useState<typeof agenda[0] | null>(null);
-  const tabs = ["Hari Ini", "Besok", "17 Agustus"];
+  const [data, setData] = useState<BerandaData | null>(null);
+  const [selectedAgenda, setSelectedAgenda] = useState<BerandaAgenda | null>(null);
+  const [isAnnouncementOpen, setAnnouncementOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setLoading] = useState(true);
+  const [requestVersion, setRequestVersion] = useState(0);
+  const [requestedDate, setRequestedDate] = useState(initialAgendaDate);
+
+  const retry = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    setRequestVersion((version) => version + 1);
+  }, []);
+
+  const selectDate = useCallback((date: string) => {
+    if (date === requestedDate) return;
+    setLoading(true);
+    setError(null);
+    setRequestedDate(date);
+  }, [requestedDate]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let active = true;
+    void getBeranda(requestedDate, controller.signal)
+      .then((response) => {
+        if (active) setData(response.data);
+      })
+      .catch((reason: unknown) => {
+        if (!active) return;
+        if (reason instanceof ApiRequestError && reason.status === 401) {
+          void useAuthStore.getState().fetchUser(true);
+        }
+        setError(reason instanceof Error ? reason.message : "Beranda gagal dimuat. Silakan coba lagi.");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [requestVersion, requestedDate]);
+
+  if (isLoading && !data) {
+    return <PageSkeleton variant="home" />;
+  }
+
+  if (error && !data) {
+    return (
+      <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 bg-linear-to-b from-primary-100 via-primary-100 to-primary-100/10 px-5 text-center">
+        <p className="text-body-1 font-semibold text-neutral-900" role="alert">{error}</p>
+        <Button onClick={retry}>Coba lagi</Button>
+      </div>
+    );
+  }
+
+  if (!data) return null;
+
+  const {
+    jadwal_agenda: agenda,
+    pengumuman_terbaru: pengumuman,
+    sedang_berlangsung: pertandingan,
+    tanggal_filter: tanggalFilter,
+  } = data;
+  const availableDates = eventDates(tanggalFilter.slice(0, 4));
 
   return (
-    <div className="bg-linear-to-b from-primary-100 via-primary-100 to-primary-100/10 min-h-screen">
-      <div className="w-full max-w-360 mx-auto px-5 md:px-15 py-10 flex flex-col gap-12">
-        
-        <section className="flex flex-col gap-4 w-full">
-          <div className="flex items-center gap-2 bg-white w-fit px-4 py-1 rounded-md">
-            <Image
-              src="/icons/calendar-date.svg"
-              alt="Calendar"
-              width={24}
-              height={24}
-            />
-            <p className="text-body-2 font-bold text-primary-600">
-              15 Agustus 2026
-            </p>
+    <div className="min-h-screen bg-linear-to-b from-primary-100 via-primary-100 to-primary-100/10">
+      <div className="mx-auto flex w-full max-w-360 flex-col gap-12 px-5 py-10 md:px-15">
+        {error && (
+          <div className="flex items-center justify-between gap-4 rounded-lg bg-amber-50 p-4" role="alert">
+            <p className="text-body-2 text-neutral-900">{error}</p>
+            <Button variant="ghost" size="S" onClick={retry} disabled={isLoading}>Coba lagi</Button>
+          </div>
+        )}
+
+        <section className="flex w-full flex-col gap-4">
+          <div className="flex w-fit items-center gap-2 rounded-md bg-white px-4 py-1">
+            <Image src="/icons/calendar-date.svg" alt="" width={24} height={24} />
+            <p className="text-body-2 font-bold text-primary-600">{formatDate(tanggalFilter)}</p>
           </div>
 
-          <div className="relative bg-white w-full min-h-100 rounded-lg p-10 md:p-16 overflow-hidden flex items-center">
+          <div className="relative flex min-h-100 w-full items-center overflow-hidden rounded-lg bg-white p-10 md:p-16">
             <div className="relative z-10">
-              <h1 className="text-[40px] md:text-[68px] leading-tight text-neutral-900 font-bold mb-4">
+              <h1 className="mb-4 text-[40px] leading-tight font-bold text-neutral-900 md:text-[68px]">
                 Semarak HUT RI <span className="text-primary-600">ke-81</span>
               </h1>
-              <p className="text-body-2 md:text-body-1 text-neutral-400">
-                “Nusantara Bersuka, Indonesia Berjaya”
-              </p>
+              <p className="text-body-2 text-neutral-400 md:text-body-1">“Nusantara Bersuka, Indonesia Berjaya”</p>
             </div>
-
-            <div className="absolute -right-5 md:-right-10 top-1/2 -translate-y-1/2 select-none pointer-events-none">
-              <span className="text-[150px] md:text-[280px] font-bold text-primary-100 leading-none">
-                81
-              </span>
+            <div className="pointer-events-none absolute top-1/2 -right-5 -translate-y-1/2 select-none md:-right-10">
+              <span className="text-[150px] leading-none font-bold text-primary-100 md:text-[280px]">81</span>
             </div>
           </div>
         </section>
 
-        <section>
-          <div className="bg-white w-full rounded-lg p-6 md:p-8 flex flex-col md:flex-row md:items-center justify-between gap-6">
-            <div className="flex flex-col gap-4">
-              <div className="flex items-center gap-4">
-                <Badge variant="solid" color="primary" className="text-body-4 px-3 py-1">
-                  {pengumuman.badge}
-                </Badge>
-                <div className="flex items-center gap-2 text-neutral-500">
-                  <Image
-                    src="/icons/clock-circle.svg"
-                    alt="Clock"
-                    width={18}
-                    height={18}
-                  />
-                  <span className="text-body-4 font-semibold mt-0.5">
-                    {pengumuman.date}
-                  </span>
+        {pengumuman && (
+          <section>
+            <div className="flex w-full flex-col justify-between gap-6 rounded-lg bg-white p-6 md:flex-row md:items-center md:p-8">
+              <div className="flex flex-col gap-4">
+                <div className="flex flex-wrap items-center gap-4">
+                  <Badge variant="solid" color="primary" className="px-3 py-1 text-body-4">Pengumuman Terbaru</Badge>
+                  <div className="flex items-center gap-2 text-neutral-500">
+                    <Image src="/icons/clock-circle.svg" alt="" width={18} height={18} />
+                    <span className="mt-0.5 text-body-4 font-semibold">{formatPublishedAt(pengumuman.tanggal_publikasi)}</span>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <h2 className="text-h5 font-bold text-neutral-900">{pengumuman.judul}</h2>
+                  <p className="mt-1 line-clamp-2 max-w-2xl text-body-2 text-neutral-400">{pengumuman.isi}</p>
                 </div>
               </div>
-              <div className="flex flex-col gap-1">
-                <h2 className="text-h5 text-neutral-900 font-bold">
-                  {pengumuman.title}
-                </h2>
-                <p className="text-body-2 text-neutral-400 max-w-2xl mt-1">
-                  {pengumuman.description}
-                </p>
+              <div className="shrink-0">
+                <Button variant="ghost" color="primary" size="M" className="font-bold" onClick={() => setAnnouncementOpen(true)}>
+                  Lihat Detail
+                  <Image src="/icons/round-arrow-right.svg" alt="" width={24} height={24} />
+                </Button>
               </div>
             </div>
-            
-            <div className="shrink-0">
-              <Button variant="ghost" color="primary" size="M" className="font-bold">
-                Lihat Detail{" "}
-                <Image
-                  src="/icons/round-arrow-right.svg"
-                  alt="Arrow"
-                  width={24}
-                  height={24}
-                />
-              </Button>
-            </div>
-          </div>
-        </section>
+          </section>
+        )}
 
         <section className="mt-10">
-          <div className="flex items-center gap-3 mb-6">
-            <Image src="/icons/alert.svg" alt="Alert" width={28} height={28} />
-            <h2 className="text-h6 text-primary-600 font-bold">
-              Sedang Berlangsung
-            </h2>
+          <div className="mb-6 flex items-center gap-3">
+            <Image src="/icons/alert.svg" alt="" width={28} height={28} />
+            <h2 className="text-h6 font-bold text-primary-600">Sedang Berlangsung</h2>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 w-full">
-            {sedangBerlangsung.map((item) => (
-              <div
-                key={item.id}
-                className="bg-white rounded-lg p-6 flex flex-col gap-5"
-              >
-                <div className="flex items-center justify-between">
-                  <Badge
-                    variant={item.badgeVariant}
-                    color={item.badgeColor}
-                  >
-                    {item.status}
-                  </Badge>
-                  <div className="flex items-center gap-2 text-primary-600">
-                    <span className="text-body-3 font-bold">{item.location}</span>
-                    <Image
-                      src="/icons/location.svg"
-                      alt="Location"
-                      width={20}
-                      height={20}
-                    />
+          {pertandingan.length ? (
+            <div className="grid w-full grid-cols-1 gap-6 lg:grid-cols-2">
+              {pertandingan.map((item) => (
+                <article key={item.id_pertandingan} className="flex flex-col gap-5 rounded-lg bg-white p-6">
+                  <div className="flex items-center justify-end">
+                    <div className="flex items-center gap-2 text-primary-600">
+                      <span className="text-body-3 font-bold">{item.lokasi}</span>
+                      <Image src="/icons/location.svg" alt="" width={20} height={20} />
+                    </div>
                   </div>
-                </div>
-
-                <h3 className="text-h4 font-bold text-neutral-900">
-                  {item.title}
-                </h3>
-
-                <div className="bg-neutral-50 rounded-lg p-6 flex flex-col sm:flex-row items-center justify-between gap-4 mt-2">
-                  <p className="text-body-2 font-bold text-neutral-900 text-center flex-1">
-                    {item.team1}
-                  </p>
-                  <Badge
-                    variant="solid"
-                    color="primary"
-                    className="text-h6 px-5 py-2 shrink-0"
-                  >
-                    VS
-                  </Badge>
-                  <p className="text-body-2 font-bold text-neutral-900 text-center flex-1">
-                    {item.team2}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
+                  <h3 className="text-h4 font-bold text-neutral-900">{item.nama_lomba}</h3>
+                  <div className="mt-2 flex flex-col items-center justify-between gap-4 rounded-lg bg-neutral-50 p-6 sm:flex-row">
+                    <p className="flex-1 text-center text-body-2 font-bold text-neutral-900">{item.peserta_1}</p>
+                    <Badge variant="solid" color="primary" className="shrink-0 px-5 py-2 text-h6">VS</Badge>
+                    <p className="flex-1 text-center text-body-2 font-bold text-neutral-900">{item.peserta_2}</p>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-lg bg-white p-8 text-center text-body-2 text-neutral-500">
+              Tidak ada pertandingan yang sedang berlangsung.
+            </div>
+          )}
         </section>
 
-        <section className="bg-white w-full max-w-300 mx-auto rounded-lg p-8 md:p-10 mt-4">
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-            <h2 className="text-h4 text-neutral-900 font-bold">
-              Jadwal dan Agenda
-            </h2>
-            <div className="bg-neutral-50 rounded-xl flex items-center p-1.5 gap-1 overflow-x-auto">
-              {tabs.map((tab) => (
-                <button
-                  key={tab}
-                  className={`px-8 py-2.5 font-bold text-body-2 rounded-lg cursor-pointer whitespace-nowrap transition-colors ${
-                    activeTab === tab
-                      ? "bg-primary-600 text-white shadow-sm pointer-events-none"
-                      : "text-neutral-600 hover:bg-neutral-200"
-                  }`}
-                  onClick={() => setActiveTab(tab)}
-                >
-                  {tab}
-                </button>
-              ))}
+        <section className="mx-auto mt-4 w-full max-w-300 rounded-lg bg-white p-8 md:p-10">
+          <div className="flex flex-col justify-between gap-6 lg:flex-row lg:items-center">
+            <h2 className="text-h4 font-bold text-neutral-900">Jadwal dan Agenda</h2>
+            <div className="flex items-center gap-1 overflow-x-auto rounded-xl bg-neutral-50 p-1.5">
+              {availableDates.map((date) => {
+                const isActive = tanggalFilter === date;
+                return (
+                  <button
+                    key={date}
+                    type="button"
+                    aria-pressed={isActive}
+                    disabled={isActive || isLoading}
+                    className={`cursor-pointer whitespace-nowrap rounded-lg px-8 py-2.5 text-body-2 font-bold transition-colors disabled:cursor-default ${
+                      isActive
+                        ? "bg-primary-600 text-white shadow-sm"
+                        : "text-neutral-600 enabled:hover:bg-neutral-200"
+                    }`}
+                    onClick={() => selectDate(date)}
+                  >
+                    {formatTabDate(date)}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
-          <div className="flex flex-col gap-10 mt-10 w-full">
-            {agenda.map((item) => (
-              <div key={item.id} className="flex flex-col md:flex-row md:items-center w-full gap-6 md:gap-0">
-                <div className={`${item.iconBg} p-4 rounded-[20px] shrink-0 w-fit mx-auto md:mx-0`}>
-                  <Image
-                    src={item.icon}
-                    alt={item.title}
-                    width={48}
-                    height={48}
-                    className="w-10 h-10 md:w-12 md:h-12"
-                  />
-                </div>
-                <div className="md:ml-8 flex-1 flex flex-col justify-center text-center md:text-left">
-                  <div className="flex items-center justify-center md:justify-start gap-3">
-                    <p className="text-body-3 font-bold text-primary-600">
-                      {item.time}
-                    </p>
-                    <Badge variant="soft" color="secondary">
-                      {item.category}
-                    </Badge>
-                  </div>
-                  <h3 className="text-h5 text-neutral-900 font-bold -mt-1">
-                    {item.title}
-                  </h3>
-                  <p className="text-body-3 text-neutral-500 flex items-center justify-center md:justify-start">
-                    <Image
-                      src="/icons/location_outline.svg"
-                      alt="Location"
-                      width={20}
-                      height={20}
-                      className="mr-1"
-                    />
-                    {item.location}
-                  </p>
-                </div>
-                <div className="shrink-0 font-bold flex justify-center md:block">
-                  <Button variant="ghost" color="primary" size="M" onClick={() => setSelectedAgenda(item)}>
-                    Lihat Detail{" "}
-                    <Image
-                      src="/icons/round-arrow-right.svg"
-                      alt="Arrow"
-                      width={24}
-                      height={24}
-                    />
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
+          {agenda.length ? (
+            <div className="mt-10 flex w-full flex-col gap-10">
+              {agenda.map((item) => {
+                const visual = agendaVisual(item);
+                return (
+                  <article key={item.id_jadwal} className="flex w-full flex-col gap-6 md:flex-row md:items-center md:gap-0">
+                    <div className={`mx-auto w-fit shrink-0 rounded-[20px] p-4 md:mx-0 ${visual.background}`}>
+                      <Image src={visual.icon} alt="" width={48} height={48} className="h-10 w-10 md:h-12 md:w-12" />
+                    </div>
+                    <div className="flex flex-1 flex-col justify-center text-center md:ml-8 md:text-left">
+                      <div className="flex items-center justify-center gap-3 md:justify-start">
+                        <p className="text-body-3 font-bold text-primary-600">{agendaTime(item)}</p>
+                        <Badge variant="soft" color="secondary">{item.nama_kategori}</Badge>
+                      </div>
+                      <h3 className="-mt-1 text-h5 font-bold text-neutral-900">{item.nama_lomba}</h3>
+                      <p className="flex items-center justify-center text-body-3 text-neutral-500 md:justify-start">
+                        <Image src="/icons/location_outline.svg" alt="" width={20} height={20} className="mr-1" />
+                        {item.lokasi}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 justify-center font-bold md:block">
+                      <Button variant="ghost" color="primary" size="M" onClick={() => setSelectedAgenda(item)}>
+                        Lihat Detail
+                        <Image src="/icons/round-arrow-right.svg" alt="" width={24} height={24} />
+                      </Button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="mt-10 rounded-lg bg-neutral-50 p-8 text-center text-body-2 text-neutral-500">
+              Belum ada jadwal pada tanggal ini.
+            </p>
+          )}
         </section>
-
       </div>
 
       <Modal isOpen={!!selectedAgenda} onClose={() => setSelectedAgenda(null)}>
         {selectedAgenda && (
-          <div className="p-10 flex flex-col gap-6">
-            <h2 className="text-h4 font-bold text-primary-600 text-center mb-2">
-              {selectedAgenda.title}
-            </h2>
-
-            <div className="flex flex-col gap-2">
-              <span className="text-body-2 font-bold text-primary-600">Tanggal</span>
-              <div className="bg-neutral-50 px-5 py-3 rounded-xl">
-                <p className="text-body-1 font-bold text-neutral-900">{selectedAgenda.date}</p>
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <span className="text-body-2 font-bold text-primary-600">Waktu</span>
-              <div className="bg-neutral-50 px-5 py-3 rounded-xl">
-                <p className="text-body-1 font-bold text-neutral-900">{selectedAgenda.time}</p>
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <span className="text-body-2 font-bold text-primary-600">Lokasi</span>
-              <div className="bg-neutral-50 px-5 py-3 rounded-xl">
-                <p className="text-body-1 font-bold text-neutral-900">{selectedAgenda.location}</p>
-              </div>
-            </div>
-
-            {selectedAgenda.nb && (
-              <div className="bg-neutral-50 px-5 py-6 rounded-xl mt-2 relative overflow-hidden">
-                <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-primary-600 rounded-l-xl"></div>
-                <p className="text-body-3 text-neutral-900 font-medium leading-relaxed">
-                  {selectedAgenda.nb}
-                </p>
-              </div>
-            )}
+          <div className="flex flex-col gap-6 p-10">
+            <h2 className="mb-2 text-center text-h4 font-bold text-primary-600">{selectedAgenda.nama_lomba}</h2>
+            <DetailField label="Kategori" value={selectedAgenda.nama_kategori} />
+            <DetailField label="Tanggal" value={formatDate(selectedAgenda.tanggal)} />
+            <DetailField label="Waktu" value={agendaTime(selectedAgenda)} />
+            <DetailField label="Lokasi" value={selectedAgenda.lokasi} />
           </div>
         )}
       </Modal>
 
+      <Modal isOpen={isAnnouncementOpen} onClose={() => setAnnouncementOpen(false)}>
+        {pengumuman && (
+          <div className="flex flex-col gap-5 p-10">
+            <Badge variant="solid" color="primary" className="mx-auto">Pengumuman Terbaru</Badge>
+            <h2 className="text-center text-h4 font-bold text-primary-600">{pengumuman.judul}</h2>
+            <p className="text-center text-body-3 font-semibold text-neutral-500">{formatPublishedAt(pengumuman.tanggal_publikasi)}</p>
+            <p className="whitespace-pre-line text-body-2 leading-relaxed text-neutral-900">{pengumuman.isi}</p>
+          </div>
+        )}
+      </Modal>
+    </div>
+  );
+}
+
+function DetailField({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-col gap-2">
+      <span className="text-body-2 font-bold text-primary-600">{label}</span>
+      <div className="rounded-xl bg-neutral-50 px-5 py-3">
+        <p className="text-body-1 font-bold text-neutral-900">{value}</p>
+      </div>
     </div>
   );
 }
