@@ -2,7 +2,8 @@
 
 import React, { useState, useMemo } from "react";
 import Image from "next/image";
-import { Button } from "@/components/Button";
+import Link from "next/link";
+import { DAFTAR_ALBUM, DEFAULT_PLACEHOLDER } from "@/lib/data/histori";
 
 interface LombaPemenangItem {
   id: number;
@@ -11,15 +12,6 @@ interface LombaPemenangItem {
   partisipan: string;
   lokasi: string;
   pemenang: string;
-}
-
-interface AlbumItem {
-  id: number;
-  kategori: "Umum" | "Anak-anak" | "Dewasa";
-  tanggal: string;
-  judul: string;
-  image: string;
-  deskripsi?: string;
 }
 
 const DAFTAR_LOMBA: LombaPemenangItem[] = [
@@ -89,8 +81,6 @@ const DAFTAR_LOMBA: LombaPemenangItem[] = [
   },
 ];
 
-const DEFAULT_PLACEHOLDER = "/images/placeholder.svg";
-
 interface ImageWithFallbackProps {
   src?: string;
   alt: string;
@@ -118,57 +108,6 @@ function ImageWithFallback({
     />
   );
 }
-
-const DAFTAR_ALBUM: AlbumItem[] = [
-  {
-    id: 1,
-    kategori: "Anak-anak",
-    tanggal: "16 Agustus 2025",
-    judul: "Estafet Pingpong Air",
-    image: DEFAULT_PLACEHOLDER,
-    deskripsi: "Keseruan lomba estafet pingpong air kategori anak-anak di halaman balai desa.",
-  },
-  {
-    id: 2,
-    kategori: "Umum",
-    tanggal: "14 Agustus 2025",
-    judul: "Estafet Karet",
-    image: DEFAULT_PLACEHOLDER,
-    deskripsi: "Antusiasme dan fokus para peserta lomba estafet karet dengan sedotan.",
-  },
-  {
-    id: 3,
-    kategori: "Anak-anak",
-    tanggal: "13 Agustus 2025",
-    judul: "Makan Kerupuk",
-    image: DEFAULT_PLACEHOLDER,
-    deskripsi: "Momen seru dan gelak tawa perlombaan makan kerupuk anak-anak.",
-  },
-  {
-    id: 4,
-    kategori: "Umum",
-    tanggal: "16 Agustus 2025",
-    judul: "Balap Karung Helm",
-    image: DEFAULT_PLACEHOLDER,
-    deskripsi: "Lomba balap karung memakai helm yang mengundang tawa seluruh warga penonton.",
-  },
-  {
-    id: 5,
-    kategori: "Umum",
-    tanggal: "17 Agustus 2025",
-    judul: "Tarik Tambang",
-    image: DEFAULT_PLACEHOLDER,
-    deskripsi: "Adu kekuatan dan kekompakan tim regu warga dalam lomba tarik tambang.",
-  },
-  {
-    id: 6,
-    kategori: "Dewasa",
-    tanggal: "15 Agustus 2025",
-    judul: "Panjat Pinang",
-    image: DEFAULT_PLACEHOLDER,
-    deskripsi: "Gotong royong dan perjuangan para pemuda menaklukkan tiang panjat pinang.",
-  },
-];
 
 export default function HistoriPage() {
   const [selectedYear, setSelectedYear] = useState<string>("2025");
@@ -340,7 +279,7 @@ export default function HistoriPage() {
         </section>
 
         {/* ─── SECTION 2: Album dan Dokumentasi ──────────────────────── */}
-        <section className="flex flex-col gap-6">
+        <section id="album-dokumentasi" className="flex scroll-mt-32 flex-col gap-6">
           <h2 className="text-2xl md:text-3xl font-bold text-neutral-900">
             Album dan Dokumentasi
           </h2>
@@ -377,22 +316,20 @@ export default function HistoriPage() {
                         {album.judul}
                       </h3>
 
-                      <Button
-                        variant="ghost"
-                        color="primary"
-                        size="S"
+                      <Link
+                        href={`/histori/album/${album.slug}`}
                         aria-label={`Lihat album ${album.judul}`}
-                        className="font-bold shrink-0"
+                        className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2.5 rounded-md px-3 py-2 text-body-3 font-bold text-primary-600 transition-colors hover:bg-primary-10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
                       >
                         Lihat Album
                         <Image
                           src="/icons/arrow.svg"
-                          alt="Arrow"
+                          alt=""
                           width={18}
                           height={18}
                           className="w-4.5 h-4.5"
                         />
-                      </Button>
+                      </Link>
                     </div>
                   </div>
                 </div>
