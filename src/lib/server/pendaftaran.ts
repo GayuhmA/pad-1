@@ -3,6 +3,7 @@ import 'server-only';
 import { Agent } from 'undici';
 import { isValidIsoDate } from '@/lib/lomba-date';
 import type {
+  BatalkanPendaftaranResponse,
   RingkasanLombaPendaftaran,
   RiwayatJadwalLomba,
   RiwayatPendaftaran,
@@ -164,4 +165,50 @@ export async function backendRiwayatPendaftaran(token: string): Promise<RiwayatP
   let body: unknown;
   try { body = await response.json(); } catch { invalidResponse(); }
   return readRiwayatPendaftaranResponse(body);
+}
+
+export async function backendBatalkanPendaftaran(
+  token: string,
+  idPendaftaran: number,
+): Promise<BatalkanPendaftaranResponse> {
+  const base = process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL;
+  if (!base) throw new PendaftaranServiceError(503, 'Layanan pendaftaran belum dikonfigurasi.');
+
+  let response: Response;
+  try {
+    response = await fetch(`${base.replace(/\/$/, '')}/api/warga/pendaftaran/${idPendaftaran}`, {
+      method: 'DELETE',
+      headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+      cache: 'no-store',
+      redirect: 'error',
+      signal: AbortSignal.timeout(15_000),
+      dispatcher: backendDispatcher,
+    } as RequestInit & { dispatcher: Agent });
+  } catch (error) {
+    const cause = error instanceof Error ? error.cause : undefined;
+    const code = cause && typeof cause === 'object' && 'code' in cause ? cause.code : undefined;
+    console.warn('[pendaftaran/backend] cancellation failed', {
+      code: typeof code === 'string' && /^[A-Z_]{1,64}$/.test(code) ? code
+        : error instanceof Error && error.name === 'TimeoutError' ? 'TIMEOUT' : 'NETWORK_ERROR',
+    });
+    throw new PendaftaranServiceError(503, 'Pembatalan belum dapat diproses. Silakan coba lagi.');
+  }
+
+  if (!response.ok) {
+    const messages: Record<number, string> = {
+      401: 'Sesi telah berakhir. Silakan masuk kembali.',
+      403: 'Anda tidak dapat membatalkan pendaftaran ini.',
+      404: 'Pendaftaran tidak ditemukan.',
+      422: 'Pendaftaran ini sudah tidak dapat dibatalkan.',
+      429: 'Terlalu banyak permintaan. Tunggu sebentar sebelum mencoba lagi.',
+    };
+    throw new PendaftaranServiceError(messages[response.status] ? response.status : 502,
+      messages[response.status] ?? 'Layanan pendaftaran sedang bermasalah. Silakan coba lagi.');
+  }
+
+  let body: unknown;
+  try { body = await response.json(); } catch { invalidResponse(); }
+  const result = record(body);
+  if (result.success !== true) invalidResponse();
+  return { success: true, message: nonEmptyString(result.message) };
 }

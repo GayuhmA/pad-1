@@ -4,8 +4,10 @@ import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
+import { Modal } from "@/components/Modal";
 import { PageSkeleton } from "@/components/skeletons/PageSkeleton";
-import { getRiwayatPendaftaran } from "@/lib/api/pendaftaran";
+import { ApiRequestError } from "@/lib/api/client";
+import { batalkanPendaftaran, getRiwayatPendaftaran } from "@/lib/api/pendaftaran";
 import { formatTanggalIndonesia, formatWaktu } from "@/lib/lomba-date";
 import type { RiwayatJadwalLomba, RiwayatPendaftaran } from "@/types/pendaftaran";
 
@@ -63,6 +65,10 @@ export default function PendaftaranPage() {
   const [retryKey, setRetryKey] = useState(0);
   const [activeStatus, setActiveStatus] = useState("Semua");
   const [searchQuery, setSearchQuery] = useState("");
+  const [cancelTarget, setCancelTarget] = useState<RiwayatPendaftaran | null>(null);
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -85,10 +91,43 @@ export default function PendaftaranPage() {
     return () => controller.abort();
   }, [retryKey]);
 
-  const statuses = useMemo(
-    () => ["Semua", ...new Set(items.map(displayStatus))],
-    [items],
-  );
+  useEffect(() => {
+    if (!notice) return;
+    const timeout = window.setTimeout(() => setNotice(null), 5_000);
+    return () => window.clearTimeout(timeout);
+  }, [notice]);
+
+  async function handleCancellation() {
+    if (!cancelTarget || isCancelling) return;
+    const target = cancelTarget;
+    setIsCancelling(true);
+    setCancelError(null);
+
+    try {
+      const response = await batalkanPendaftaran(target.id_pendaftaran);
+      setItems((current) => current.map((item) => item.id_pendaftaran === target.id_pendaftaran
+        ? { ...item, status: "Dibatalkan" }
+        : item));
+
+      try {
+        const history = await getRiwayatPendaftaran();
+        setItems(history.data);
+      } catch {
+        // The cancellation already succeeded; keep the safe local status until the next reload.
+      }
+
+      setCancelTarget(null);
+      setNotice(response.message || `Pendaftaran ${target.lomba.nama_lomba} berhasil dibatalkan.`);
+    } catch (error) {
+      setCancelError(error instanceof ApiRequestError
+        ? error.message
+        : "Pembatalan pendaftaran gagal diproses. Silakan coba lagi.");
+    } finally {
+      setIsCancelling(false);
+    }
+  }
+
+  const statuses = ["Semua", "Berhasil", "Dibatalkan"] as const;
 
   const filteredItems = useMemo(() => {
     const query = normalize(searchQuery);
@@ -123,6 +162,23 @@ export default function PendaftaranPage() {
           </p>
         </header>
 
+        {notice && (
+          <div
+            role="status"
+            className="fixed right-5 top-32 z-[60] flex w-[calc(100%-2.5rem)] max-w-sm items-start justify-between gap-3 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-body-3 text-green-800 shadow-lg animate-[modal-in_0.2s_ease-out] md:right-8"
+          >
+            <span className="font-semibold">{notice}</span>
+            <button
+              type="button"
+              onClick={() => setNotice(null)}
+              aria-label="Tutup pemberitahuan"
+              className="shrink-0 text-lg font-bold leading-none text-green-700/70 hover:text-green-900"
+            >
+              ×
+            </button>
+          </div>
+        )}
+
         {loadError ? (
           <section role="alert" className="rounded-2xl bg-white p-8 text-center shadow-sm">
             <h2 className="text-h6 font-bold text-neutral-900">Riwayat pendaftaran belum dapat dimuat</h2>
@@ -152,25 +208,23 @@ export default function PendaftaranPage() {
                 />
               </label>
 
-              {items.length > 0 && (
-                <div className="flex items-center gap-3 overflow-x-auto pb-1" aria-label="Filter status pendaftaran">
-                  {statuses.map((status) => (
-                    <button
-                      type="button"
-                      key={status}
-                      aria-pressed={activeStatus === status}
-                      onClick={() => setActiveStatus(status)}
-                      className={`whitespace-nowrap rounded-xl px-7 py-2 text-body-2 font-bold shadow-2xs transition-all ${
-                        activeStatus === status
-                          ? "bg-primary-600 text-white shadow-sm"
-                          : "bg-white text-neutral-500 hover:bg-neutral-50 hover:text-neutral-700"
-                      }`}
-                    >
-                      {status}
-                    </button>
-                  ))}
-                </div>
-              )}
+              <div className="flex items-center gap-3 overflow-x-auto pb-1" aria-label="Filter status pendaftaran">
+                {statuses.map((status) => (
+                  <button
+                    type="button"
+                    key={status}
+                    aria-pressed={activeStatus === status}
+                    onClick={() => setActiveStatus(status)}
+                    className={`whitespace-nowrap rounded-xl px-7 py-2 text-body-2 font-bold shadow-2xs transition-all ${
+                      activeStatus === status
+                        ? "bg-primary-600 text-white shadow-sm"
+                        : "bg-white text-neutral-500 hover:bg-neutral-50 hover:text-neutral-700"
+                    }`}
+                  >
+                    {status}
+                  </button>
+                ))}
+              </div>
             </section>
 
             <section aria-label="Riwayat pendaftaran" className="flex flex-col gap-5">
@@ -240,10 +294,11 @@ export default function PendaftaranPage() {
                           {canShowCancellation && (
                             <button
                               type="button"
-                              disabled
-                              title="Menunggu endpoint pembatalan dari backend"
-                              aria-label="Batalkan pendaftaran, belum tersedia"
-                              className="cursor-not-allowed rounded-xl bg-neutral-300 px-5 py-2.5 text-body-3 font-bold text-neutral-500"
+                              onClick={() => {
+                                setCancelError(null);
+                                setCancelTarget(item);
+                              }}
+                              className="rounded-xl bg-primary-600 px-5 py-2.5 text-body-3 font-bold text-white transition-colors hover:bg-primary-700"
                             >
                               Batalkan Pendaftaran
                             </button>
@@ -265,6 +320,55 @@ export default function PendaftaranPage() {
           </>
         )}
       </div>
+
+      <Modal
+        isOpen={Boolean(cancelTarget)}
+        onClose={() => {
+          if (!isCancelling) {
+            setCancelTarget(null);
+            setCancelError(null);
+          }
+        }}
+        ariaLabel="Konfirmasi pembatalan pendaftaran"
+      >
+        {cancelTarget && (
+          <div className="flex w-full flex-col gap-6 p-6 md:p-8">
+            <div>
+              <p className="text-body-3 font-bold uppercase tracking-wide text-primary-600">Konfirmasi Pembatalan</p>
+              <h2 className="mt-1 text-h6 font-bold text-neutral-900 md:text-h4">
+                {cancelTarget.lomba.nama_lomba}
+              </h2>
+              <p className="mt-2 text-body-2 text-neutral-600">
+                Pendaftaran yang dibatalkan mungkin tidak dapat dipulihkan. Apakah Anda yakin ingin melanjutkan?
+              </p>
+            </div>
+
+            {cancelError && (
+              <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-body-2 font-semibold text-error-200">
+                {cancelError}
+              </div>
+            )}
+
+            <div className="flex flex-col-reverse justify-end gap-3 sm:flex-row">
+              <Button
+                variant="ghost"
+                color="neutral"
+                size="L"
+                disabled={isCancelling}
+                onClick={() => {
+                  setCancelTarget(null);
+                  setCancelError(null);
+                }}
+              >
+                Kembali
+              </Button>
+              <Button size="L" disabled={isCancelling} onClick={() => void handleCancellation()}>
+                {isCancelling ? "Membatalkan…" : "Ya, Batalkan"}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

@@ -8,6 +8,9 @@ const {
   GET: getRiwayatPendaftaran,
   POST: postPendaftaran,
 } = require('../src/app/api/warga/pendaftaran/route.ts');
+const {
+  DELETE: deletePendaftaran,
+} = require('../src/app/api/warga/pendaftaran/[id]/route.ts');
 const { SESSION_COOKIE } = require('../src/lib/server/auth.ts');
 const { buildAgendaDateTabs, getScheduleTimingStatus } = require('../src/lib/lomba-date.ts');
 
@@ -61,6 +64,17 @@ function postRequest(body, token = 'test-token') {
 function getPendaftaranRequest(token = 'test-token') {
   return new NextRequest('https://frontend.example/api/warga/pendaftaran', {
     headers: token ? { Cookie: `${SESSION_COOKIE}=${token}` } : undefined,
+  });
+}
+
+function deletePendaftaranRequest(id, token = 'test-token') {
+  return new NextRequest(`https://frontend.example/api/warga/pendaftaran/${id}`, {
+    method: 'DELETE',
+    headers: {
+      Origin: 'https://frontend.example',
+      'Sec-Fetch-Site': 'same-origin',
+      ...(token ? { Cookie: `${SESSION_COOKIE}=${token}` } : {}),
+    },
   });
 }
 
@@ -195,6 +209,61 @@ test('registration history rejects missing sessions and malformed successful dat
   assert.equal(response.status, 502);
   assert.deepEqual(await response.json(), {
     message: 'Respons layanan pendaftaran tidak valid. Silakan coba lagi.',
+  });
+});
+
+test('registration cancellation forwards the id and private token to backend', async () => {
+  global.fetch = async (url, init) => {
+    assert.equal(String(url), 'https://backend.example/api/warga/pendaftaran/1');
+    assert.equal(init.method, 'DELETE');
+    assert.equal(init.headers.Authorization, 'Bearer test-token');
+    assert.equal(init.body, undefined);
+    return Response.json({ success: true, message: 'Pendaftaran berhasil dibatalkan.' });
+  };
+
+  const response = await deletePendaftaran(
+    deletePendaftaranRequest(1),
+    { params: Promise.resolve({ id: '1' }) },
+  );
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    success: true,
+    message: 'Pendaftaran berhasil dibatalkan.',
+  });
+});
+
+test('registration cancellation validates origin, session, id, and backend rules', async () => {
+  global.fetch = () => { throw new Error('Must not reach backend'); };
+
+  const invalidId = await deletePendaftaran(
+    deletePendaftaranRequest('abc'),
+    { params: Promise.resolve({ id: 'abc' }) },
+  );
+  assert.equal(invalidId.status, 422);
+
+  const missingSession = await deletePendaftaran(
+    deletePendaftaranRequest(1, ''),
+    { params: Promise.resolve({ id: '1' }) },
+  );
+  assert.equal(missingSession.status, 401);
+
+  const foreign = deletePendaftaranRequest(1);
+  foreign.headers.set('origin', 'https://evil.example');
+  foreign.headers.set('sec-fetch-site', 'cross-site');
+  const forbidden = await deletePendaftaran(
+    foreign,
+    { params: Promise.resolve({ id: '1' }) },
+  );
+  assert.equal(forbidden.status, 403);
+
+  global.fetch = async () => Response.json({}, { status: 422 });
+  const notCancellable = await deletePendaftaran(
+    deletePendaftaranRequest(1),
+    { params: Promise.resolve({ id: '1' }) },
+  );
+  assert.equal(notCancellable.status, 422);
+  assert.deepEqual(await notCancellable.json(), {
+    message: 'Pendaftaran ini sudah tidak dapat dibatalkan.',
   });
 });
 

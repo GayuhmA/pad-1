@@ -32,3 +32,8 @@ export interface RiwayatPendaftaranResponse {
   message: string;
   data: RiwayatPendaftaran[];
 }
+
+export interface BatalkanPendaftaranResponse {
+  success: true;
+  message: string;
+}
