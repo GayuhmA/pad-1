@@ -1,27 +1,53 @@
 "use client";
 
-import React, { useState, type FormEvent } from "react";
+import React, { useEffect, useRef, useState, type FormEvent } from "react";
 import Image from "next/image";
 import { Button } from "@/components/Button";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/stores/auth-store";
+import { SessionStatus } from "@/components/SessionStatus";
 
 export default function LoginPage() {
   const router = useRouter();
-  const { login, isLoading, error, clearError } = useAuthStore();
+  const { login, error, clearError, status: sessionStatus } = useAuthStore();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [status, setStatus] = useState<"idle" | "submitting" | "redirecting">("idle");
+  const submitLocked = useRef(false);
+  const isBusy = status !== "idle";
+  const statusMessage = status === "redirecting"
+    ? "Berhasil masuk. Mengalihkan…"
+    : status === "submitting" ? "Sedang masuk…" : "";
+
+  useEffect(() => {
+    if (sessionStatus === "authenticated") router.replace("/");
+  }, [sessionStatus, router]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    // Lock immediately, including submissions before React renders disabled controls.
+    if (submitLocked.current) return;
+    submitLocked.current = true;
+    setStatus("submitting");
+
     try {
-      await login(username, password);
-      router.replace("/");
+      await login(username.trim(), password);
     } catch {
-      
+      submitLocked.current = false;
+      setStatus("idle");
+      return;
     }
+
+    // Navigation is asynchronous; keep the form locked until this page unmounts.
+    setStatus("redirecting");
+    setPassword("");
+    router.replace("/");
   };
+
+  if (status === "idle" && sessionStatus !== "unauthenticated") {
+    return <SessionStatus />;
+  }
 
   return (
     <div className="bg-linear-to-br from-primary-600 to-primary-700 min-h-screen grid grid-cols-1 lg:grid-cols-2">
@@ -42,13 +68,14 @@ export default function LoginPage() {
             />
           </div>
 
-          <form onSubmit={handleSubmit} className="w-full px-12 flex flex-col items-center z-10">
+          <p role="status" aria-atomic="true" className="sr-only">{statusMessage}</p>
+          <form onSubmit={handleSubmit} aria-busy={isBusy} className="w-full px-12 flex flex-col items-center z-10">
             <h1 className="text-primary-600 font-bold text-h4 mb-10 text-center">
               Selamat Datang!
             </h1>
 
             {error && (
-              <div className="w-full mb-4 bg-red-50 border border-red-200 text-red-600 text-body-3 px-4 py-3 rounded-xl">
+              <div role="alert" className="w-full mb-4 bg-red-50 border border-red-200 text-red-600 text-body-3 px-4 py-3 rounded-xl">
                 {error}
               </div>
             )}
@@ -63,9 +90,13 @@ export default function LoginPage() {
                 }}
                 className="w-full bg-neutral-50 border border-transparent text-neutral-900 py-3.5 px-5 rounded-xl text-body-2 transition-all placeholder:text-neutral-400 focus:bg-white focus:border-primary-600 focus:outline-none focus:ring-4 focus:ring-primary-600/10" 
                 placeholder="Username"
+                aria-label="Username"
                 required
                 autoComplete="username"
-                disabled={isLoading}
+                autoCapitalize="none"
+                spellCheck={false}
+                maxLength={255}
+                disabled={isBusy}
               />
               
               <div className="relative w-full">
@@ -78,15 +109,19 @@ export default function LoginPage() {
                   }}
                   className="w-full bg-neutral-50 border border-transparent text-neutral-900 py-3.5 pl-5 pr-12 rounded-xl text-body-2 transition-all placeholder:text-neutral-400 focus:bg-white focus:border-primary-600 focus:outline-none focus:ring-4 focus:ring-primary-600/10" 
                   placeholder="Password"
+                  aria-label="Password"
                   required
                   autoComplete="current-password"
-                  disabled={isLoading}
+                  maxLength={1024}
+                  disabled={isBusy}
                 />
                 <button
                   type="button"
+                  disabled={isBusy}
+                  aria-label={showPassword ? "Sembunyikan password" : "Tampilkan password"}
+                  aria-pressed={showPassword}
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-4 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-primary-600 transition-colors focus:outline-none"
-                  tabIndex={-1}
                 >
                   {showPassword ? (
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
@@ -107,9 +142,15 @@ export default function LoginPage() {
                 color="primary" 
                 size="L" 
                 className="font-bold w-full rounded-xl mt-4"
-                disabled={isLoading}
+                disabled={isBusy}
               >
-                {isLoading ? "Loading..." : "Log In"}
+                {isBusy && (
+                  <svg aria-hidden="true" viewBox="0 0 24 24" className="size-5 shrink-0 motion-safe:animate-spin" fill="none">
+                    <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="3" className="opacity-25" />
+                    <path d="M12 3a9 9 0 0 1 9 9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                  </svg>
+                )}
+                {status === "redirecting" ? "Mengalihkan…" : status === "submitting" ? "Sedang masuk…" : "Log In"}
               </Button>
             </div>
           </form>

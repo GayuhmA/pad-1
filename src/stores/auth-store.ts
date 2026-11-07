@@ -1,86 +1,120 @@
 import { create } from 'zustand';
-
 import type { User } from '@/types/auth';
 import * as authApi from '@/lib/api/auth';
-import {
-  ApiRequestError,
-  setStoredToken,
-  removeStoredToken,
-  getStoredToken,
-} from '@/lib/api/client';
+import { ApiRequestError } from '@/lib/api/client';
+import { publishSessionChange } from '@/lib/session-sync';
 
-
+export type SessionStatus = 'initializing' | 'authenticated' | 'unauthenticated' | 'error' | 'logging-out';
 interface AuthState {
   user: User | null;
-  token: string | null;
-  isLoading: boolean;
+  status: SessionStatus;
+  isChecking: boolean;
   error: string | null;
-
-  hydrate: () => void;
   login: (username: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
-  fetchUser: () => Promise<void>;
+  fetchUser: (force?: boolean) => Promise<void>;
+  syncSession: () => Promise<void>;
   clearError: () => void;
 }
 
+const errorMessage = (error: unknown) => error instanceof ApiRequestError
+  ? error.message : 'Layanan akun sedang bermasalah. Silakan coba lagi.';
 
-export const useAuthStore = create<AuthState>((set, get) => ({
-  user: null,
-  token: null,
-  isLoading: false,
-  error: null,
+/** Separate factory keeps request coordination scoped to each store, including tests. */
+export function createAuthStore(api = authApi, notify = publishSessionChange) {
+  let revision = 0;
+  let sessionRequest: Promise<void> | null = null;
+  let mutating = false;
 
-  hydrate: () => {
-    const token = getStoredToken();
-    if (token) {
-      set({ token });
-    }
-  },
+  return create<AuthState>((set, get) => ({
+    user: null,
+    status: 'initializing',
+    isChecking: false,
+    error: null,
 
-  login: async (username, password) => {
-    set({ isLoading: true, error: null });
-    try {
-      const data = await authApi.login({ username, password });
-      setStoredToken(data.token);
-      set({ token: data.token, user: data.user, isLoading: false });
-    } catch (err) {
-      const message =
-        err instanceof ApiRequestError
-          ? err.message
-          : 'Terjadi kesalahan, coba lagi nanti.';
-      set({ isLoading: false, error: message });
-      throw err;
-    }
-  },
+    fetchUser: (force = false) => {
+      if (sessionRequest) return sessionRequest;
+      if (mutating || (!force && get().status !== 'initializing')) return Promise.resolve();
+      const requestRevision = revision;
+      set({ isChecking: true, error: null });
+      const request = (async () => {
+        try {
+          const { user } = await api.getMe();
+          if (requestRevision !== revision) return;
+          set({ user, status: 'authenticated', error: null });
+        } catch (error) {
+          if (requestRevision !== revision) return;
+          if (error instanceof ApiRequestError && error.status === 401) {
+            set({ user: null, status: 'unauthenticated', error: get().user ? error.message : null });
+          } else {
+            // Temporary outages do not destroy the session or trigger login loops.
+            set({ status: get().user ? 'authenticated' : 'error', error: errorMessage(error) });
+          }
+        } finally {
+          if (requestRevision === revision) {
+            sessionRequest = null;
+            set({ isChecking: false });
+          }
+        }
+      })();
+      sessionRequest = request;
+      return request;
+    },
 
-  logout: async () => {
-    try {
-      await authApi.logout();
-    } catch {
-    } finally {
-      removeStoredToken();
-      set({ user: null, token: null });
-    }
-  },
+    login: async (username, password) => {
+      if (mutating) throw new Error('Account request already in progress');
+      mutating = true;
+      const requestRevision = ++revision;
+      sessionRequest = null;
+      set({ user: null, error: null, isChecking: false });
+      try {
+        await api.login({ username, password });
+        if (requestRevision !== revision) return;
+        // /me supplies the complete identity (including phone), and validates
+        // the cookie before any authenticated UI is revealed.
+        set({ status: 'initializing' });
+        notify();
+      } catch (error) {
+        if (requestRevision === revision) set({ user: null, status: 'unauthenticated', error: errorMessage(error) });
+        throw error;
+      } finally { mutating = false; }
+      if (requestRevision === revision) {
+        await get().fetchUser(true);
+        if (get().status === 'unauthenticated') {
+          const message = 'Sesi tidak valid. Silakan masuk kembali.';
+          set({ error: message });
+          throw new ApiRequestError(message, 401);
+        }
+      }
+    },
 
-  fetchUser: async () => {
-    if (!get().token) {
-      get().hydrate();
-    }
+    logout: async () => {
+      if (mutating) throw new Error('Account request already in progress');
+      mutating = true;
+      const previousStatus = get().status;
+      const requestRevision = ++revision;
+      sessionRequest = null;
+      set({ status: 'logging-out', isChecking: false, error: null });
+      try {
+        await api.logout();
+        if (requestRevision !== revision) return;
+        set({ user: null, status: 'unauthenticated', error: null });
+        notify();
+      } catch (error) {
+        if (requestRevision === revision) set({ status: previousStatus, error: errorMessage(error) });
+        throw error;
+      } finally { mutating = false; }
+    },
 
-    const { token, user: existingUser } = get();
-    if (!token || existingUser) return;
+    syncSession: async () => {
+      if (mutating) return;
+      ++revision;
+      sessionRequest = null;
+      set({ user: null, status: 'initializing', error: null, isChecking: false });
+      await get().fetchUser(true);
+    },
+    clearError: () => set({ error: null }),
+  }));
+}
 
-    set({ isLoading: true });
-    try {
-      const data = await authApi.getMe();
-      set({ user: data.user, isLoading: false });
-    } catch {
-      removeStoredToken();
-      set({ user: null, token: null, isLoading: false });
-    }
-  },
-
-  clearError: () => set({ error: null }),
-}));
-
+export const useAuthStore = createAuthStore();
