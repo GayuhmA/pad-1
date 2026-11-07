@@ -5,6 +5,10 @@ import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { Button } from '@/components/Button';
 import { useAppStore } from '@/stores/app-store';
+import { useNotificationStore } from '@/stores/notification-store';
+import { Icon } from '@/components/Icon';
+import { Avatar } from '@/components/Avatar';
+import { useResidentProfile } from '@/hooks/use-resident-profile';
 
 const navItems = [
   { name: 'Beranda', href: '/' },
@@ -18,6 +22,12 @@ export function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
   const { isMobileMenuOpen, toggleMobileMenu, closeMobileMenu } = useAppStore();
+  const hasUnreadNotifications = useNotificationStore((state) => state.notifications.some((item) => !item.isRead));
+  const isNotificationPage = pathname === '/notifikasi';
+  const isProfilePage = pathname === '/profile';
+  const { profile } = useResidentProfile();
+
+  if (!profile) return null;
 
   return (
     <header className="w-full bg-white flex justify-center sticky top-0 z-50">
@@ -71,15 +81,25 @@ export function Navbar() {
 
         {/* Right section */}
         <div className="flex-1 flex justify-end items-center gap-6">
-          <button className="relative hover:bg-neutral-100 p-2 rounded-full transition-colors flex items-center justify-center">
-            <Image src="/icons/notification.svg" alt="Notification" width={28} height={28} className="w-7 h-7" />
-          </button>
-          <button className="w-12 h-12 rounded-full border border-neutral-200 overflow-hidden bg-neutral-100 flex items-center justify-center shrink-0 text-neutral-400 hover:bg-neutral-200 transition-colors">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-              <circle cx="12" cy="7" r="4"></circle>
-            </svg>
-          </button>
+          <Link
+            href="/notifikasi"
+            onClick={closeMobileMenu}
+            aria-label={hasUnreadNotifications ? 'Notifikasi, ada pesan belum dibaca' : 'Notifikasi'}
+            aria-current={isNotificationPage ? 'page' : undefined}
+            className={`inline-flex size-12 shrink-0 items-center justify-center rounded-full transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600 ${isNotificationPage ? 'bg-primary-100 text-primary-600 hover:bg-primary-200' : 'text-neutral-400 hover:bg-neutral-100'}`}
+          >
+            <Icon name="notification" className="size-7" />
+          </Link>
+          <Link
+            href="/profile"
+            onClick={closeMobileMenu}
+            aria-label={`Profil ${profile.name}`}
+            title={`${profile.name} (@${profile.username})`}
+            aria-current={isProfilePage ? 'page' : undefined}
+            className={`inline-flex shrink-0 items-center rounded-full border-2 p-0.5 transition-colors hover:border-primary-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600 ${isProfilePage ? 'border-primary-300' : 'border-transparent'}`}
+          >
+            <Avatar name={profile.name} className="size-11 text-body-2" />
+          </Link>
 
           {/* Hamburger (mobile) */}
           <button
