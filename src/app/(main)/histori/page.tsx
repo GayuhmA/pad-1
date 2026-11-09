@@ -110,7 +110,7 @@ function ImageWithFallback({
 }
 
 export default function HistoriPage() {
-  const [selectedYear, setSelectedYear] = useState<string>("2025");
+  const selectedYear = "2025";
   const [searchQuery, setSearchQuery] = useState<string>("");
 
   // Filter Table Data
@@ -142,7 +142,7 @@ export default function HistoriPage() {
             </button>
             <button
               type="button"
-              className="bg-[#BA1B1B] text-white p-2.5 rounded-xl shadow-xs hover:bg-[#990D00] transition-colors cursor-pointer flex items-center justify-center"
+              className="bg-[#BA1B1B] text-white p-2.5 rounded-xl shadow-xs hover:bg-primary-700 transition-colors cursor-pointer flex items-center justify-center"
               title="Filter Tahun"
             >
               <Image
