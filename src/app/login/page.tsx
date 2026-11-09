@@ -6,10 +6,11 @@ import { Button } from "@/components/Button";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/stores/auth-store";
 import { SessionStatus } from "@/components/SessionStatus";
+import { getPostLoginPath } from "@/lib/management-role";
 
 export default function LoginPage() {
   const router = useRouter();
-  const { login, error, clearError, status: sessionStatus } = useAuthStore();
+  const { login, error, clearError, status: sessionStatus, user } = useAuthStore();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -21,8 +22,8 @@ export default function LoginPage() {
     : status === "submitting" ? "Sedang masuk…" : "";
 
   useEffect(() => {
-    if (sessionStatus === "authenticated") router.replace("/");
-  }, [sessionStatus, router]);
+    if (sessionStatus === "authenticated" && user) router.replace(getPostLoginPath(user.role));
+  }, [sessionStatus, user, router]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -39,10 +40,10 @@ export default function LoginPage() {
       return;
     }
 
-    // Navigation is asynchronous; keep the form locked until this page unmounts.
+    // Login resolves only after the role is verified from /me.
     setStatus("redirecting");
     setPassword("");
-    router.replace("/");
+    router.replace(getPostLoginPath(useAuthStore.getState().user?.role));
   };
 
   if (status === "idle" && sessionStatus !== "unauthenticated") {
