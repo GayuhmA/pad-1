@@ -73,19 +73,23 @@ export function createAuthStore(api = authApi, notify = publishSessionChange) {
         // /me supplies the complete identity (including phone), and validates
         // the cookie before any authenticated UI is revealed.
         set({ status: 'initializing' });
-        notify();
       } catch (error) {
         if (requestRevision === revision) set({ user: null, status: 'unauthenticated', error: errorMessage(error) });
         throw error;
       } finally { mutating = false; }
-      if (requestRevision === revision) {
-        await get().fetchUser(true);
-        if (get().status === 'unauthenticated') {
-          const message = 'Sesi tidak valid. Silakan masuk kembali.';
-          set({ error: message });
-          throw new ApiRequestError(message, 401);
-        }
+      // Wait for the verified account before resolving login. Broadcasting the
+      // session change before /me completes can make the same tab invalidate
+      // this request and briefly expose an empty user to the redirect handler.
+      await get().fetchUser(true);
+      if (get().status === 'unauthenticated') {
+        const message = 'Sesi tidak valid. Silakan masuk kembali.';
+        set({ error: message });
+        throw new ApiRequestError(message, 401);
       }
+      if (get().status !== 'authenticated') {
+        throw new ApiRequestError(get().error ?? 'Sesi belum dapat diverifikasi. Silakan coba lagi.', 503);
+      }
+      if (requestRevision === revision) notify();
     },
 
     logout: async () => {
