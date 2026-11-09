@@ -43,6 +43,20 @@ function string(value: unknown): string {
   return value;
 }
 
+function nullableString(value: unknown): string | null {
+  if (value === null) return null;
+  if (typeof value !== 'string') {
+    throw new BerandaServiceError(502, 'Respons layanan beranda tidak valid. Silakan coba lagi.');
+  }
+  return value;
+}
+
+function yearString(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (Number.isInteger(value)) return String(value);
+  throw new BerandaServiceError(502, 'Respons layanan beranda tidak valid. Silakan coba lagi.');
+}
+
 function banner(value: unknown): BerandaBanner | null {
   if (value === null) return null;
   const item = record(value);
@@ -52,8 +66,8 @@ function banner(value: unknown): BerandaBanner | null {
   return {
     id_periode: integer(item.id_periode),
     judul: string(item.judul),
-    tahun: string(item.tahun),
-    deskripsi: string(item.deskripsi),
+    tahun: yearString(item.tahun),
+    deskripsi: nullableString(item.deskripsi),
     logo: item.logo,
   };
 }
@@ -66,9 +80,9 @@ function agenda(value: unknown): BerandaAgenda {
     nama_lomba: string(item.nama_lomba),
     nama_kategori: string(item.nama_kategori),
     tanggal: string(item.tanggal),
-    waktu_mulai: string(item.waktu_mulai),
-    waktu_selesai: string(item.waktu_selesai),
-    lokasi: string(item.lokasi),
+    waktu_mulai: nullableString(item.waktu_mulai),
+    waktu_selesai: nullableString(item.waktu_selesai),
+    lokasi: nullableString(item.lokasi),
   };
 }
 
@@ -91,11 +105,11 @@ function pertandingan(value: unknown): BerandaPertandingan {
     nama_lomba: string(item.nama_lomba),
     peserta_1: string(item.peserta_1),
     peserta_2: string(item.peserta_2),
-    babak: string(item.babak),
+    babak: nullableString(item.babak),
     waktu_mulai: string(item.waktu_mulai),
-    waktu_selesai: string(item.waktu_selesai),
+    waktu_selesai: nullableString(item.waktu_selesai),
     status: string(item.status),
-    lokasi: string(item.lokasi),
+    lokasi: nullableString(item.lokasi),
   };
 }
 
@@ -112,6 +126,9 @@ export function readBerandaResponse(value: unknown): BerandaResponse {
   if (response.success !== true) {
     throw new BerandaServiceError(502, 'Respons layanan beranda tidak valid. Silakan coba lagi.');
   }
+  const tanggalTersedia = rawData.tanggal_tersedia === undefined
+    ? undefined
+    : array(rawData.tanggal_tersedia, string);
   const data: BerandaData = {
     banner: banner(rawData.banner),
     tanggal_filter: string(rawData.tanggal_filter),
@@ -119,6 +136,7 @@ export function readBerandaResponse(value: unknown): BerandaResponse {
     pengumuman_terbaru: pengumuman(rawData.pengumuman_terbaru),
     sedang_berlangsung: array(rawData.sedang_berlangsung, pertandingan),
   };
+  if (tanggalTersedia !== undefined) data.tanggal_tersedia = tanggalTersedia;
   return { success: true, message: string(response.message), data };
 }
 

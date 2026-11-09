@@ -22,7 +22,6 @@ const tabDateFormatter = new Intl.DateTimeFormat("id-ID", {
   month: "long",
   timeZone: "Asia/Jakarta",
 });
-const eventDays = [15, 16, 17] as const;
 const fallbackAgendaVisuals = [
   { icon: "/icons/workout.svg", background: "bg-primary-100" },
   { icon: "/icons/flag.svg", background: "bg-secondary-100" },
@@ -40,10 +39,6 @@ function formatTabDate(value: string) {
   return Number.isNaN(date.getTime()) ? value : tabDateFormatter.format(date);
 }
 
-function eventDates(year: string) {
-  return eventDays.map((day) => `${year}-08-${day}`);
-}
-
 function jakartaToday() {
   const parts = new Intl.DateTimeFormat("en-CA", {
     year: "numeric",
@@ -56,12 +51,11 @@ function jakartaToday() {
 }
 
 function initialAgendaDate() {
-  const today = jakartaToday();
-  const dates = eventDates(today.slice(0, 4));
-  return dates.includes(today) ? today : dates.find((date) => date > today) ?? dates.at(-1)!;
+  return jakartaToday();
 }
 
-function formatClock(value: string) {
+function formatClock(value: string | null) {
+  if (!value) return 'Waktu belum ditentukan';
   const match = value.match(/(?:^| )(\d{2}):(\d{2})/);
   return match ? `${match[1]}:${match[2]}` : value;
 }
@@ -73,7 +67,12 @@ function formatPublishedAt(value: string) {
 }
 
 function agendaTime(item: BerandaAgenda) {
-  return `${formatClock(item.waktu_mulai)} - ${formatClock(item.waktu_selesai)}`;
+  if (item.waktu_mulai && item.waktu_selesai) {
+    return `${formatClock(item.waktu_mulai)} - ${formatClock(item.waktu_selesai)}`;
+  }
+  if (item.waktu_mulai) return formatClock(item.waktu_mulai);
+  if (item.waktu_selesai) return `Sampai ${formatClock(item.waktu_selesai)}`;
+  return 'Waktu belum ditentukan';
 }
 
 function agendaVisual(item: BerandaAgenda) {
@@ -151,7 +150,9 @@ export default function HomePage() {
     sedang_berlangsung: pertandingan,
     tanggal_filter: tanggalFilter,
   } = data;
-  const availableDates = eventDates(tanggalFilter.slice(0, 4));
+  const availableDates = data.tanggal_tersedia?.length
+    ? data.tanggal_tersedia
+    : [tanggalFilter];
 
   return (
     <div className="min-h-screen bg-linear-to-b from-primary-100 via-primary-100 to-primary-100/10">
@@ -218,9 +219,14 @@ export default function HomePage() {
             <div className="grid w-full grid-cols-1 gap-6 lg:grid-cols-2">
               {pertandingan.map((item) => (
                 <article key={item.id_pertandingan} className="flex flex-col gap-5 rounded-lg bg-white p-6">
-                  <div className="flex items-center justify-end">
+                  <div className="flex items-center justify-between gap-4">
+                    {item.babak ? (
+                      <Badge variant="soft" color="secondary" className="px-5 py-1 text-body-3">
+                        {item.babak}
+                      </Badge>
+                    ) : <span />}
                     <div className="flex items-center gap-2 text-primary-600">
-                      <span className="text-body-3 font-bold">{item.lokasi}</span>
+                      <span className="text-body-3 font-bold">{item.lokasi ?? "Lokasi belum ditentukan"}</span>
                       <Image src="/icons/location.svg" alt="" width={20} height={20} />
                     </div>
                   </div>
@@ -283,7 +289,7 @@ export default function HomePage() {
                       <h3 className="-mt-1 text-h5 font-bold text-neutral-900">{item.nama_lomba}</h3>
                       <p className="flex items-center justify-center text-body-3 text-neutral-500 md:justify-start">
                         <Image src="/icons/location_outline.svg" alt="" width={20} height={20} className="mr-1" />
-                        {item.lokasi}
+                        {item.lokasi ?? "Lokasi belum ditentukan"}
                       </p>
                     </div>
                     <div className="flex shrink-0 justify-center font-bold md:block">
@@ -311,7 +317,7 @@ export default function HomePage() {
             <DetailField label="Kategori" value={selectedAgenda.nama_kategori} />
             <DetailField label="Tanggal" value={formatDate(selectedAgenda.tanggal)} />
             <DetailField label="Waktu" value={agendaTime(selectedAgenda)} />
-            <DetailField label="Lokasi" value={selectedAgenda.lokasi} />
+            <DetailField label="Lokasi" value={selectedAgenda.lokasi ?? "Lokasi belum ditentukan"} />
           </div>
         )}
       </Modal>
