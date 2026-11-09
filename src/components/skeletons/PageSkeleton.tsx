@@ -1,4 +1,4 @@
-type PageSkeletonVariant = 'home' | 'lomba' | 'pendaftaran' | 'profile' | 'generic';
+type PageSkeletonVariant = 'home' | 'lomba' | 'pendaftaran' | 'iuran' | 'profile' | 'generic';
 
 interface PageSkeletonProps {
   variant?: PageSkeletonVariant;
@@ -252,6 +252,44 @@ function PendaftaranSkeleton() {
   );
 }
 
+function IuranSkeleton() {
+  return (
+    <div className="min-h-screen grow bg-linear-to-b from-primary-100 via-primary-100 to-primary-100/10">
+      <div className="mx-auto flex w-full max-w-360 flex-col gap-10 px-5 py-10 md:px-15">
+        <header className="space-y-3">
+          <SkeletonBlock className="h-12 w-64 max-w-full rounded-xl" />
+          <SkeletonBlock className="h-5 w-112 max-w-full rounded-md" />
+        </header>
+        <section className="space-y-5">
+          <div className="flex flex-col justify-between gap-4 sm:flex-row">
+            <div className="space-y-2">
+              <SkeletonBlock className="h-10 w-60 rounded-lg" />
+              <SkeletonBlock className="h-4 w-72 rounded-md" />
+            </div>
+            <div className="flex gap-2 rounded-xl bg-white/70 p-1.5">
+              {[1, 2, 3].map((item) => <SkeletonBlock key={item} className="h-9 w-28 rounded-lg" />)}
+            </div>
+          </div>
+          <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+            {[1, 2, 3].map((item) => (
+              <div key={item} className="space-y-5 rounded-2xl bg-white p-6">
+                <SkeletonBlock className="h-6 w-32 rounded-full" />
+                <SkeletonBlock className="h-8 w-3/4 rounded-lg" />
+                <SkeletonBlock className="h-20 w-full rounded-xl" />
+                <SkeletonBlock className="h-11 w-full rounded-lg" />
+              </div>
+            ))}
+          </div>
+        </section>
+        <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(340px,0.72fr)]">
+          <SkeletonBlock className="h-150 rounded-2xl bg-white/80" />
+          <SkeletonBlock className="h-96 rounded-2xl bg-white/80" />
+        </section>
+      </div>
+    </div>
+  );
+}
+
 function GenericSkeleton() {
   return (
     <div className="min-h-screen grow bg-linear-to-b from-primary-100 via-primary-100 to-primary-100/10">
@@ -273,6 +311,7 @@ function PageContent({ variant }: { variant: PageSkeletonVariant }) {
   if (variant === 'home') return <HomeSkeleton />;
   if (variant === 'lomba') return <LombaSkeleton />;
   if (variant === 'pendaftaran') return <PendaftaranSkeleton />;
+  if (variant === 'iuran') return <IuranSkeleton />;
   if (variant === 'profile') return <ProfileSkeleton />;
   return <GenericSkeleton />;
 }

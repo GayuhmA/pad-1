@@ -3,6 +3,11 @@
 import React, { useState, useMemo, useRef, useEffect } from "react";
 import Image from "next/image";
 import { Dropdown } from "@/components/Dropdown";
+import { PageSkeleton } from "@/components/skeletons/PageSkeleton";
+import { ApiRequestError } from "@/lib/api/client";
+import { ajukanPembayaranIuran, getDaftarIuran } from "@/lib/api/iuran";
+import { useAuthStore } from "@/stores/auth-store";
+import type { TagihanIuran } from "@/types/iuran";
 
 const PAYMENT_OPTIONS = [
   { value: "QRIS", label: "QRIS" },
@@ -19,74 +24,132 @@ interface IuranItem {
   waktu: string;
 }
 
-const INITIAL_DATA: IuranItem[] = [
-  {
-    id: 1,
-    nama: "Budi Santoso",
-    nominal: 150000,
-    status: "Menunggu Konfirmasi",
-    waktu: "15 Agustus 2026, 21:20 WIB",
-  },
-  {
-    id: 2,
-    nama: "Agus Setiawan",
-    nominal: 200000,
-    status: "Lunas",
-    waktu: "13 Agustus 2026, 12:57 WIB",
-  },
-  {
-    id: 3,
-    nama: "Hendra Wijaya",
-    nominal: 250000,
-    status: "Lunas",
-    waktu: "13 Agustus 2026, 10:23 WIB",
-  },
-  {
-    id: 4,
-    nama: "Dedi Kurniawan",
-    nominal: null,
-    status: "Belum Lunas",
-    waktu: "-",
-  },
-  {
-    id: 5,
-    nama: "Teguh Prasetyo",
-    nominal: 150000,
-    status: "Lunas",
-    waktu: "11 Agustus 2026, 23:11 WIB",
-  },
-];
-
 const nominalFormatter = new Intl.NumberFormat("id-ID");
+const ALLOWED_FILE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+const MAX_FILE_SIZE = 2 * 1024 * 1024;
 
 const FILTER_TABS = ["Semua", "Lunas", "Belum Lunas"] as const;
 
+function formatPaymentDate(value: string): string {
+  return new Intl.DateTimeFormat("id-ID", {
+    timeZone: "Asia/Jakarta",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(new Date(value)).replace(" pukul ", ", ") + " WIB";
+}
+
+function billName(item: TagihanIuran): string {
+  return item.periode?.nama_kegiatan ??
+    (item.periode?.tahun ? `Iuran kegiatan ${item.periode.tahun}` : `Tagihan #${item.id_iuran}`);
+}
+
 export default function IuranPage() {
-  const [data, setData] = useState<IuranItem[]>(INITIAL_DATA);
+  const user = useAuthStore((state) => state.user);
+  const [bills, setBills] = useState<TagihanIuran[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [retryKey, setRetryKey] = useState(0);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [pendingIds, setPendingIds] = useState<Set<number>>(() => new Set());
   const [activeTab, setActiveTab] = useState<string>("Semua");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [paymentMethodTab, setPaymentMethodTab] = useState<"QRIS" | "Transfer">("QRIS");
 
   // Form State
-  const [namaKeluarga, setNamaKeluarga] = useState("");
-  const [nominalPembayaran, setNominalPembayaran] = useState<number | "">("");
+  const [selectedIuranId, setSelectedIuranId] = useState<number | null>(null);
   const [metodePembayaran, setMetodePembayaran] = useState("QRIS");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
-    return () => {
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
-    };
+    const controller = new AbortController();
+    async function load() {
+      setIsLoading(true);
+      setLoadError(null);
+      try {
+        const response = await getDaftarIuran(controller.signal);
+        setBills(response.data);
+        setLastUpdated(new Date());
+        setSelectedIuranId((current) => {
+          if (current && response.data.some((item) => item.id_iuran === current)) return current;
+          const payable = response.data.find((item) =>
+            item.status === "Belum Bayar" && item.pembayaran_terakhir?.status_verifikasi !== "Menunggu");
+          return payable?.id_iuran ?? response.data[0]?.id_iuran ?? null;
+        });
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          setLoadError(error instanceof Error ? error.message : "Daftar iuran gagal dimuat.");
+        }
+      } finally {
+        if (!controller.signal.aborted) setIsLoading(false);
+      }
+    }
+    void load();
+    return () => controller.abort();
+  }, [retryKey]);
+
+  useEffect(() => () => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
   }, [previewUrl]);
 
+  useEffect(() => {
+    if (!toastMessage) return;
+    const timeout = window.setTimeout(() => setToastMessage(null), 5_000);
+    return () => window.clearTimeout(timeout);
+  }, [toastMessage]);
+
+  const selectedBill = useMemo(
+    () => bills.find((item) => item.id_iuran === selectedIuranId) ?? null,
+    [bills, selectedIuranId],
+  );
+  const namaKeluarga = user?.nama ?? "";
+  const nominalPembayaran = selectedBill?.nominal ?? "";
+  const isSelectedPending = selectedBill
+    ? pendingIds.has(selectedBill.id_iuran) || selectedBill.pembayaran_terakhir?.status_verifikasi === "Menunggu"
+    : false;
+  const canSubmit = Boolean(selectedBill && selectedBill.status === "Belum Bayar" && !isSelectedPending);
+
+  const data = useMemo<IuranItem[]>(() => bills.map((item) => {
+    const latest = item.pembayaran_terakhir;
+    const pending = pendingIds.has(item.id_iuran) || latest?.status_verifikasi === "Menunggu";
+    return {
+      id: item.id_iuran,
+      nama: namaKeluarga || "Akun Anda",
+      nominal: item.nominal,
+      status: item.status === "Sudah Bayar" ? "Lunas" : pending ? "Menunggu Konfirmasi" : "Belum Lunas",
+      waktu: latest ? formatPaymentDate(latest.tanggal_bayar) : "-",
+    };
+  }), [bills, namaKeluarga, pendingIds]);
+
+  function clearFile() {
+    setSelectedFile(null);
+    setPreviewUrl(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
   const handleFileChange = (file: File) => {
+    setFormError(null);
+    if (!ALLOWED_FILE_TYPES.has(file.type)) {
+      clearFile();
+      setFormError("Bukti pembayaran harus berupa JPG, PNG, atau WebP.");
+      return;
+    }
+    if (file.size > MAX_FILE_SIZE) {
+      clearFile();
+      setFormError("Ukuran bukti pembayaran maksimal 2 MB.");
+      return;
+    }
     setSelectedFile(file);
-    setPreviewUrl(file.type.startsWith("image/") ? URL.createObjectURL(file) : null);
+    setPreviewUrl(URL.createObjectURL(file));
   };
 
   // Filter Table Data
@@ -94,7 +157,7 @@ export default function IuranPage() {
     return data.filter((item) => {
       if (activeTab !== "Semua") {
         if (activeTab === "Lunas" && item.status !== "Lunas") return false;
-        if (activeTab === "Belum Lunas" && item.status !== "Belum Lunas") return false;
+        if (activeTab === "Belum Lunas" && item.status === "Lunas") return false;
       }
 
       if (searchQuery.trim()) {
@@ -107,49 +170,44 @@ export default function IuranPage() {
   }, [data, activeTab, searchQuery]);
 
   // Handle Form Submission
-  const handleSubmitConfirmation = (e: React.FormEvent) => {
+  const handleSubmitConfirmation = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!namaKeluarga.trim() || nominalPembayaran === "") {
-      alert("Harap lengkapi nama kepala keluarga dan nominal pembayaran.");
+    setFormError(null);
+    if (!selectedBill || !canSubmit) {
+      setFormError("Pilih tagihan yang masih dapat dibayar.");
       return;
     }
-
-    if (!Number.isSafeInteger(nominalPembayaran) || nominalPembayaran <= 0) {
-      alert("Nominal pembayaran harus berupa angka lebih dari 0.");
+    if (!selectedFile) {
+      setFormError("Unggah bukti pembayaran terlebih dahulu.");
       return;
     }
 
     setIsSubmitting(true);
-    setTimeout(() => {
-      const now = new Date();
-      const formattedDate = `${now.getDate()} Agustus 2026, ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")} WIB`;
-      
-      const newItem: IuranItem = {
-        id: Date.now(),
-        nama: namaKeluarga,
-        nominal: nominalPembayaran,
-        status: "Menunggu Konfirmasi",
-        waktu: formattedDate,
-      };
-
-      setData((prev) => [newItem, ...prev]);
-      setToastMessage("Bukti pembayaran berhasil dikirim! Menunggu konfirmasi panitia.");
-      setNamaKeluarga("");
-      setNominalPembayaran("");
-      setSelectedFile(null);
-      setPreviewUrl(null);
-      if (fileInputRef.current) fileInputRef.current.value = "";
+    try {
+      const response = await ajukanPembayaranIuran(selectedBill.id_iuran, {
+        metode: metodePembayaran,
+        nominal: selectedBill.nominal,
+        buktiBayar: selectedFile,
+      });
+      setPendingIds((current) => new Set(current).add(selectedBill.id_iuran));
+      setToastMessage(response.message);
+      clearFile();
+    } catch (error) {
+      setFormError(error instanceof ApiRequestError
+        ? error.message
+        : "Pembayaran gagal diajukan. Silakan coba lagi.");
+    } finally {
       setIsSubmitting(false);
-
-      setTimeout(() => {
-        setToastMessage(null);
-      }, 5000);
-    }, 600);
+    }
   };
 
   const handleDownloadQris = () => {
-    alert("Mengunduh gambar QRIS...");
+    alert("File QRIS resmi belum tersedia dari backend.");
   };
+
+  if (isLoading && bills.length === 0 && !loadError) {
+    return <PageSkeleton variant="iuran" />;
+  }
 
   return (
     <div className="bg-linear-to-b from-primary-100 via-primary-100 to-primary-100/10 min-h-screen font-outfit">
@@ -173,6 +231,15 @@ export default function IuranPage() {
           <h1 className="text-2xl md:text-3xl lg:text-4xl font-bold text-neutral-900">
             Transparansi Iuran Warga
           </h1>
+
+          {loadError && (
+            <div role="alert" className="flex flex-col items-start justify-between gap-3 rounded-xl border border-error-100/20 bg-error-10 px-4 py-3 text-sm font-semibold text-error-100 sm:flex-row sm:items-center">
+              <span>{loadError}</span>
+              <button type="button" onClick={() => setRetryKey((value) => value + 1)} className="rounded-lg bg-error-100 px-4 py-2 text-xs font-bold text-white">
+                Coba Lagi
+              </button>
+            </div>
+          )}
 
           {/* Controls Bar: Tabs & Search */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
@@ -220,7 +287,7 @@ export default function IuranPage() {
           {/* Data Table Card */}
           <div className="rounded-2xl shadow-xs overflow-hidden flex flex-col">
             <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse min-w-[750px]">
+              <table className="w-full text-left border-collapse min-w-187.5">
                 {/* Table Header: Grey Bar (#F1F1F4) with Red Bold text */}
                 <thead className="bg-neutral-50">
                   <tr>
@@ -244,7 +311,7 @@ export default function IuranPage() {
                   {filteredData.length === 0 ? (
                     <tr>
                       <td colSpan={4} className="py-16 text-center text-neutral-500 font-semibold">
-                        Tidak ada data warga yang sesuai.
+                        {bills.length === 0 ? "Belum ada tagihan iuran untuk akun ini." : "Tidak ada data warga yang sesuai."}
                       </td>
                     </tr>
                   ) : (
@@ -282,7 +349,9 @@ export default function IuranPage() {
             {/* Table Footer: Grey Bar (#F1F1F4) with Red text & Pagination */}
             <div className="bg-neutral-50 px-8 py-4.5 flex flex-col sm:flex-row items-center justify-between gap-4">
               <span className="text-xs md:text-sm font-bold text-[#BA1B1B]">
-                Terakhir diperbarui: Hari ini, 22:37 WIB
+                {lastUpdated
+                  ? `Terakhir diperbarui: ${new Intl.DateTimeFormat("id-ID", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(lastUpdated)} WIB`
+                  : "Data belum diperbarui"}
               </span>
 
               {/* Pagination Controls */}
@@ -339,7 +408,10 @@ export default function IuranPage() {
               <div className="bg-neutral-100 rounded-xl p-1.5 flex items-center mb-6">
                 <button
                   type="button"
-                  onClick={() => setPaymentMethodTab("QRIS")}
+                  onClick={() => {
+                    setPaymentMethodTab("QRIS");
+                    setMetodePembayaran("QRIS");
+                  }}
                   className={`flex-1 py-2.5 rounded-lg text-sm md:text-base font-bold transition-all cursor-pointer ${
                     paymentMethodTab === "QRIS"
                       ? "bg-[#BA1B1B] text-white shadow-xs"
@@ -350,7 +422,10 @@ export default function IuranPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setPaymentMethodTab("Transfer")}
+                  onClick={() => {
+                    setPaymentMethodTab("Transfer");
+                    setMetodePembayaran("Transfer Bank");
+                  }}
                   className={`flex-1 py-2.5 rounded-lg text-sm md:text-base font-bold transition-all cursor-pointer ${
                     paymentMethodTab === "Transfer"
                       ? "bg-[#BA1B1B] text-white shadow-xs"
@@ -375,7 +450,7 @@ export default function IuranPage() {
                         viewBox="0 0 180 180"
                         fill="none"
                         xmlns="http://www.w3.org/2000/svg"
-                        className="w-full h-full max-w-[190px] max-h-[190px]"
+                        className="w-full h-full max-w-47.5 max-h-47.5"
                       >
                         {/* Top-Left Finder */}
                         <rect x="10" y="10" width="48" height="48" rx="5" stroke="#BA1B1B" strokeWidth="5" />
@@ -432,10 +507,10 @@ export default function IuranPage() {
 
                     <div>
                       <p className="text-xs font-bold text-neutral-900 tracking-wide">
-                        NMID: ID1020987654321
+                        NMID: Belum tersedia
                       </p>
                       <p className="text-[11px] font-bold text-neutral-600 tracking-wider uppercase mt-0.5">
-                        PANITIA SEMARAK HUT RI
+                        MENUNGGU DATA DARI BACKEND
                       </p>
                     </div>
                   </div>
@@ -458,7 +533,7 @@ export default function IuranPage() {
                     <button
                       type="button"
                       onClick={handleDownloadQris}
-                      className="w-full bg-[#BA1B1B] hover:bg-[#990D00] text-white font-bold text-sm md:text-base py-3 rounded-xl transition-all cursor-pointer shadow-xs active:scale-[0.99] mt-6"
+                      className="w-full bg-[#BA1B1B] hover:bg-primary-700 text-white font-bold text-sm md:text-base py-3 rounded-xl transition-all cursor-pointer shadow-xs active:scale-[0.99] mt-6"
                     >
                       Unduh QRIS
                     </button>
@@ -474,7 +549,7 @@ export default function IuranPage() {
                         Nama Bank
                       </label>
                       <div className="h-11 bg-neutral-100 rounded-xl px-4 flex items-center text-xs md:text-sm font-bold text-neutral-900">
-                        Bank Central Asia (BCA)
+                        Belum tersedia dari backend
                       </div>
                     </div>
 
@@ -483,7 +558,7 @@ export default function IuranPage() {
                         Nama Rekening
                       </label>
                       <div className="h-11 bg-neutral-100 rounded-xl px-4 flex items-center text-xs md:text-sm font-bold text-neutral-900">
-                        a.n. Sri Mulyani
+                        Belum tersedia dari backend
                       </div>
                     </div>
 
@@ -492,14 +567,11 @@ export default function IuranPage() {
                         Nomor Rekening
                       </label>
                       <div className="h-11 bg-neutral-100 rounded-xl px-4 flex items-center justify-between text-xs md:text-sm font-bold text-neutral-900 tracking-wider">
-                        <span>1234-5678-9012</span>
+                        <span>Belum tersedia</span>
                         <button
                           type="button"
-                          onClick={() => {
-                            navigator.clipboard.writeText("123456789012");
-                            alert("Nomor rekening berhasil disalin!");
-                          }}
-                          className="text-xs font-bold text-[#BA1B1B] hover:underline cursor-pointer"
+                          disabled
+                          className="cursor-not-allowed text-xs font-bold text-neutral-400"
                         >
                           Salin
                         </button>
@@ -510,12 +582,12 @@ export default function IuranPage() {
                   {/* Right Column: Transfer Guidance */}
                   <div className="flex flex-col gap-3">
                     <h3 className="font-bold text-base md:text-lg text-neutral-900">
-                      Panduan Pembayaran Qris
+                      Panduan Transfer Bank
                     </h3>
                     <ol className="list-decimal list-outside pl-4 space-y-2.5 text-xs md:text-sm font-semibold text-neutral-800 leading-relaxed">
                       <li>Buka mobile banking yang kamu gunakan.</li>
                       <li>Pilih menu Transfer Antarbank.</li>
-                      <li>Pilih bank tujuan BCA, lalu masukkan nomor rekening yang tertera.</li>
+                      <li>Gunakan data rekening resmi yang diberikan panitia.</li>
                       <li>Masukkan nominal sesuai tagihan dan konfirmasi pembayaran.</li>
                       <li>Simpan bukti transfer sebagai bukti pembayaran.</li>
                     </ol>
@@ -533,6 +605,27 @@ export default function IuranPage() {
                 <div className="w-44 h-px bg-neutral-200 mx-auto mt-2 mb-6" />
 
                 <form onSubmit={handleSubmitConfirmation} className="flex flex-col gap-4">
+                  {/* Tagihan yang akan dibayar */}
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs font-bold text-neutral-800">
+                      Tagihan Iuran
+                    </label>
+                    <Dropdown
+                      value={selectedIuranId ? String(selectedIuranId) : ""}
+                      onChange={(value) => {
+                        setSelectedIuranId(Number(value));
+                        setFormError(null);
+                        clearFile();
+                      }}
+                      options={bills.map((item) => ({
+                        value: String(item.id_iuran),
+                        label: `${billName(item)} — Rp ${nominalFormatter.format(item.nominal)}`,
+                      }))}
+                      placeholder="Pilih tagihan"
+                      disabled={bills.length === 0}
+                    />
+                  </div>
+
                   {/* Field 1: Nama Kepala Keluarga */}
                   <div className="flex flex-col gap-1">
                     <label className="text-xs font-bold text-neutral-800">
@@ -540,11 +633,10 @@ export default function IuranPage() {
                     </label>
                     <input
                       type="text"
-                      required
+                      readOnly
                       value={namaKeluarga}
-                      onChange={(e) => setNamaKeluarga(e.target.value)}
-                      placeholder="Masukkan Nama"
-                      className="w-full h-11 bg-neutral-100 text-neutral-900 placeholder:text-neutral-400 rounded-xl px-4 text-xs md:text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary-500 transition-all"
+                      placeholder="Nama akun"
+                      className="w-full h-11 bg-neutral-100 text-neutral-900 placeholder:text-neutral-400 rounded-xl px-4 text-xs md:text-sm font-medium focus:outline-none"
                     />
                   </div>
 
@@ -558,18 +650,8 @@ export default function IuranPage() {
                       <input
                         id="nominal-pembayaran"
                         type="text"
-                        inputMode="numeric"
-                        required
+                        readOnly
                         value={nominalPembayaran === "" ? "" : nominalFormatter.format(nominalPembayaran)}
-                        onChange={(e) => {
-                          const digits = e.target.value.replace(/\D/g, "");
-                          if (!digits) {
-                            setNominalPembayaran("");
-                            return;
-                          }
-                          const amount = Number(digits);
-                          if (Number.isSafeInteger(amount)) setNominalPembayaran(amount);
-                        }}
                         placeholder="0"
                         className="w-full min-w-0 h-full bg-transparent text-neutral-900 placeholder:text-neutral-400 text-xs md:text-sm font-medium focus:outline-none"
                       />
@@ -585,6 +667,7 @@ export default function IuranPage() {
                       value={metodePembayaran}
                       onChange={(val) => setMetodePembayaran(val)}
                       options={PAYMENT_OPTIONS}
+                      disabled={!canSubmit}
                     />
                   </div>
 
@@ -593,7 +676,8 @@ export default function IuranPage() {
                     <input
                       type="file"
                       ref={fileInputRef}
-                      accept="image/*,.pdf"
+                      accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                      disabled={!canSubmit}
                       className="hidden"
                       onChange={(e) => {
                         if (e.target.files && e.target.files[0]) {
@@ -604,8 +688,9 @@ export default function IuranPage() {
                     
                     <button
                       type="button"
+                      disabled={!canSubmit}
                       onClick={() => fileInputRef.current?.click()}
-                      className="border border-dashed border-[#BA1B1B] bg-neutral-100 rounded-2xl py-6 px-4 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-neutral-200/50 transition-colors"
+                      className="border border-dashed border-[#BA1B1B] bg-neutral-100 rounded-2xl py-6 px-4 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-neutral-200/50 transition-colors disabled:cursor-not-allowed disabled:border-neutral-300 disabled:opacity-60"
                     >
                       {previewUrl && (
                         <Image
@@ -635,21 +720,35 @@ export default function IuranPage() {
 
                       <p className="text-xs font-bold text-[#BA1B1B]">
                         {selectedFile ? (
-                          <span className="truncate max-w-[220px] inline-block">
+                          <span className="truncate max-w-55 inline-block">
                             {selectedFile.name}
                           </span>
                         ) : (
-                          "Klik untuk Unggah Bukti Pembayaran"
+                          canSubmit ? "Klik untuk Unggah Bukti Pembayaran" : "Pilih tagihan yang dapat dibayar"
                         )}
                       </p>
                     </button>
                   </div>
 
+                  {!canSubmit && selectedBill && (
+                    <p className="rounded-xl bg-secondary-100/70 px-4 py-3 text-xs font-semibold text-secondary-700">
+                      {selectedBill.status === "Sudah Bayar"
+                        ? "Tagihan ini sudah lunas."
+                        : "Pembayaran tagihan ini sedang menunggu verifikasi panitia."}
+                    </p>
+                  )}
+
+                  {formError && (
+                    <p role="alert" className="rounded-xl bg-error-10 px-4 py-3 text-xs font-semibold text-error-100">
+                      {formError}
+                    </p>
+                  )}
+
                   {/* Submit Button */}
                   <button
                     type="submit"
-                    disabled={isSubmitting}
-                    className="w-full bg-[#BA1B1B] hover:bg-[#990D00] active:scale-[0.99] text-white font-bold text-sm md:text-base py-3.5 px-6 rounded-xl flex items-center justify-center gap-2.5 shadow-sm transition-all cursor-pointer mt-4 disabled:opacity-50"
+                    disabled={isSubmitting || !canSubmit}
+                    className="w-full bg-[#BA1B1B] hover:bg-primary-700 active:scale-[0.99] text-white font-bold text-sm md:text-base py-3.5 px-6 rounded-xl flex items-center justify-center gap-2.5 shadow-sm transition-all cursor-pointer mt-4 disabled:opacity-50"
                   >
                     <Image
                       src="/icons/plane.svg"
