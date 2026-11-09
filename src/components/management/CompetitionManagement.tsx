@@ -77,9 +77,23 @@ const initialArchive: ArchivedCompetition[] = [
   { id: 'archive-balap-karung', name: 'Balap Karung', category: 'Umum', participantCount: 12, location: 'Halaman Balai Desa' },
 ];
 
-const emptyForm: CompetitionForm = {
-  name: '', kind: 'Individu', category: 'Umum', date: '2026-08-17', startTime: '08:00', endTime: '09:00', location: '', capacity: '12',
-};
+function currentJakartaDate(): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Jakarta',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date());
+  const part = (type: string) => parts.find((item) => item.type === type)?.value ?? '';
+  return `${part('year')}-${part('month')}-${part('day')}`;
+}
+
+function emptyForm(): CompetitionForm {
+  return {
+    name: '', kind: 'Individu', category: 'Umum', date: currentJakartaDate(),
+    startTime: '08:00', endTime: '09:00', location: '', capacity: '12',
+  };
+}
 
 const PAGE_SIZE = 3;
 
@@ -174,7 +188,7 @@ export function CompetitionManagement({ role, userName }: { role: 'admin' | 'pan
     endTime: currentEdit.endTime,
     location: currentEdit.location,
     capacity: String(currentEdit.capacity),
-  } : emptyForm;
+  } : emptyForm();
   const filteredArchive = archived.filter((item) => [item.name, item.category, item.location].some((value) => value.toLocaleLowerCase('id-ID').includes(archiveQuery.trim().toLocaleLowerCase('id-ID'))));
 
   function saveCompetition(value: CompetitionForm) {

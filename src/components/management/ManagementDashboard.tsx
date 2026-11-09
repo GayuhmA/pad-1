@@ -2,9 +2,13 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/stores/auth-store';
+import { createMatch, getManagementDashboard, getMatchOptions } from '@/lib/api/management-dashboard';
+import { ApiRequestError } from '@/lib/api/client';
+import { Modal } from '@/components/Modal';
+import type { CreateMatchInput, DashboardAgenda, DashboardMatch, ManagementDashboardData, MatchOptionsData } from '@/types/dashboard';
 
 type Role = 'panitia' | 'admin';
 export type IconName = 'grid' | 'trophy' | 'users' | 'wallet' | 'mail' | 'image' | 'clock' | 'shield' | 'settings' | 'megaphone' | 'external' | 'menu' | 'close' | 'chevron' | 'search' | 'calendar' | 'edit' | 'arrow' | 'check' | 'dots' | 'building' | 'chart' | 'filter' | 'logout';
@@ -72,20 +76,6 @@ const navigation: Record<Role, { label: string; groups: { title: string; items: 
     ],
   },
 };
-
-const panitiaMetrics = [
-  { label: 'Total Lomba', value: '12', icon: 'trophy' as const, note: '4 lomba berlangsung' },
-  { label: 'Total Pendaftar', value: '25', icon: 'users' as const, note: '+6 minggu ini' },
-  { label: 'Pembayaran Lunas', value: '31', icon: 'check' as const, note: 'Dari 45 tagihan' },
-  { label: 'Belum Lunas', value: '14', icon: 'wallet' as const, note: 'Perlu ditindaklanjuti' },
-];
-
-const adminMetrics = [
-  { label: 'Total Warga', value: '128', icon: 'building' as const, note: '+8 warga terdaftar' },
-  { label: 'Panitia Aktif', value: '12', icon: 'shield' as const, note: 'Di 4 divisi' },
-  { label: 'Pendaftaran', value: '86', icon: 'users' as const, note: '+14 minggu ini' },
-  { label: 'Perlu Verifikasi', value: '9', icon: 'wallet' as const, note: 'Pembayaran warga' },
-];
 
 function Sidebar({ role, userName, activeItem, onClose }: { role: Role; userName: string; activeItem: Exclude<NavigationKey, null>; onClose?: () => void }) {
   const router = useRouter();
@@ -186,95 +176,185 @@ function Sidebar({ role, userName, activeItem, onClose }: { role: Role; userName
   );
 }
 
-function MetricCard({ metric, index }: { metric: (typeof panitiaMetrics)[number] | (typeof adminMetrics)[number]; index: number }) {
-  return (
-    <article className="rounded-2xl border border-primary-100/90 bg-white p-5 shadow-[0_3px_16px_rgba(34,24,24,0.025)] sm:p-6">
-      <div className="flex items-start justify-between gap-3">
-        <p className="text-sm font-medium text-neutral-500">{metric.label}</p>
-        <span className={`flex size-9 items-center justify-center rounded-xl ${index === 3 ? 'bg-secondary-100 text-secondary-700' : 'bg-primary-100/65 text-primary-600'}`}><Icon name={metric.icon} className="size-4.5" /></span>
-      </div>
-      <p className="mt-3 text-[34px] font-semibold leading-none tracking-tight text-neutral-900 sm:text-[38px]">{metric.value}</p>
-      <p className="mt-3 text-xs text-neutral-400">{metric.note}</p>
-    </article>
-  );
+function SectionHeading({ title, action, onAction }: { title: string; action?: string; onAction?: () => void }) {
+  return <div className="mb-5 flex items-center justify-between gap-4"><h2 className="text-[18px] font-semibold tracking-tight text-neutral-900 sm:text-xl">{title}</h2>{action && <button type="button" onClick={onAction} className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary-600 hover:text-primary-700">{action}<Icon name="arrow" className="size-4" /></button>}</div>;
 }
 
-function SectionHeading({ title, action }: { title: string; action?: string }) {
-  return <div className="mb-5 flex items-center justify-between gap-4"><h2 className="text-[18px] font-semibold tracking-tight text-neutral-900 sm:text-xl">{title}</h2>{action && <button type="button" className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary-600 hover:text-primary-700">{action}<Icon name="arrow" className="size-4" /></button>}</div>;
+function MetricCard({ label, value, icon, index }: { label: string; value: number; icon: IconName; index: number }) {
+  return <article className="rounded-2xl border border-primary-100/90 bg-white p-5 shadow-[0_3px_16px_rgba(34,24,24,0.025)] sm:p-6">
+    <div className="flex items-start justify-between gap-3">
+      <p className="text-sm font-medium text-neutral-500">{label}</p>
+      <span className={`flex size-9 items-center justify-center rounded-xl ${index === 3 ? 'bg-secondary-100 text-secondary-700' : 'bg-primary-100/65 text-primary-600'}`}><Icon name={icon} className="size-4.5" /></span>
+    </div>
+    <p className="mt-3 text-[34px] font-semibold leading-none tracking-tight text-neutral-900 sm:text-[38px]">{value}</p>
+  </article>;
 }
 
 function StagePill({ children, active = false }: { children: string; active?: boolean }) {
   return <span className={`rounded-full px-3 py-1 text-[11px] font-semibold ${active ? 'bg-[#FFE0DD] text-primary-700' : 'bg-neutral-50 text-neutral-400'}`}>{children}</span>;
 }
 
-function MatchRow({ name, place, phase, left, right, edit = false }: { name: string; place: string; phase: 'Penyisihan' | 'Semifinal' | 'Final'; left: string; right: string; edit?: boolean }) {
-  return (
-    <article className="py-4 first:pt-0 last:pb-0">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div><h3 className="font-semibold text-neutral-900">{name}</h3><p className="mt-1 text-sm text-neutral-500">{place}</p></div>
-        <div className="flex gap-1.5"><StagePill active={phase === 'Penyisihan'}>Penyisihan</StagePill><StagePill active={phase === 'Semifinal'}>Semifinal</StagePill><StagePill active={phase === 'Final'}>Final</StagePill></div>
-      </div>
-      <div className={`mt-3 flex items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-[13px] ${edit ? 'bg-primary-100/65' : 'bg-neutral-50'}`}>
-        <span className="min-w-0 flex-1 truncate font-medium text-neutral-800">{left}</span><span className="text-xs font-bold text-primary-600">VS</span><span className="min-w-0 flex-1 truncate text-right font-medium text-neutral-800">{right}</span>
-        {edit && <button type="button" aria-label={`Edit hasil ${name}`} className="ml-1 rounded-lg p-1 text-primary-500 hover:bg-white"><Icon name="edit" className="size-4" /></button>}
-      </div>
-    </article>
-  );
+function MatchRow({ match }: { match: DashboardMatch }) {
+  const phases = ['Penyisihan', 'Semifinal', 'Final'];
+  return <article className="py-4 first:pt-0 last:pb-0">
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div><h3 className="font-semibold text-neutral-900">{match.nama_lomba}</h3><p className="mt-1 text-sm text-neutral-500">{match.lokasi || 'Lokasi belum ditentukan'} · {match.waktu_mulai}{match.waktu_selesai ? `–${match.waktu_selesai}` : ''}</p></div>
+      <div className="flex gap-1.5">{phases.map((phase) => <StagePill key={phase} active={match.babak === phase}>{phase}</StagePill>)}</div>
+    </div>
+    <div className="mt-3 flex items-center justify-between gap-3 rounded-xl bg-neutral-50 px-3 py-2.5 text-[13px]">
+      <span className="min-w-0 flex-1 truncate font-medium text-neutral-800">{match.peserta_1}</span><span className="text-xs font-bold text-primary-600">VS</span><span className="min-w-0 flex-1 truncate text-right font-medium text-neutral-800">{match.peserta_2}</span>
+    </div>
+  </article>;
 }
 
-const agendaByDay = {
-  'Hari Ini': [
-    { time: '08.00', title: 'Balap Karung Helm', place: 'Halaman Selatan Balai Desa' },
-    { time: '08.30', title: 'Panjat Pinang', place: 'Lapangan Utama' },
-    { time: '13.00', title: 'Estafet Karet Tepung', place: 'Aula Balai Desa' },
-  ],
-  Besok: [
-    { time: '09.00', title: 'Tarik Tambang', place: 'Lapangan Timur' },
-    { time: '10.30', title: 'Makan Kerupuk', place: 'Halaman Balai Desa' },
-    { time: '19.00', title: 'Malam Tirakatan', place: 'Aula Balai Desa' },
-  ],
-  '17 Agustus': [
-    { time: '07.00', title: 'Upacara Kemerdekaan', place: 'Lapangan Utama' },
-    { time: '09.00', title: 'Final Berbagai Lomba', place: 'Lapangan Utama' },
-    { time: '19.30', title: 'Pentas Seni Warga', place: 'Panggung Utama' },
-  ],
-};
+function addIsoDays(date: string, days: number): string {
+  const value = new Date(`${date}T00:00:00Z`);
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
+}
 
-function AgendaPanel() {
-  const [selectedDay, setSelectedDay] = useState<keyof typeof agendaByDay>('Besok');
+function AgendaPanel({ agenda, tanggal, onDateChange }: { agenda: DashboardAgenda[]; tanggal: string; onDateChange: (value: string) => void }) {
+  const today = jakartaToday();
+  const tomorrow = addIsoDays(today, 1);
+  const displayedDate = tanggal || today;
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const customDateRef = useRef<HTMLInputElement>(null);
+  const selectedTab = displayedDate === today ? 'today' : displayedDate === tomorrow ? 'tomorrow' : 'custom';
+  const formattedCustomDate = new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'short', timeZone: 'Asia/Jakarta' }).format(new Date(`${displayedDate}T12:00:00+07:00`));
   return (
     <section className="rounded-2xl border border-primary-100/90 bg-white p-5 shadow-[0_3px_16px_rgba(34,24,24,0.025)] sm:p-6">
-      <SectionHeading title="Jadwal dan Agenda" action="Semua agenda" />
+      <SectionHeading title="Jadwal dan Agenda" action="Semua agenda" onAction={() => { setShowDatePicker(true); customDateRef.current?.focus(); }} />
+      {showDatePicker && <label className="mb-4 flex items-center gap-2 text-sm text-neutral-600"><Icon name="calendar" className="size-4 text-neutral-400" /><span>Pilih tanggal</span><input ref={customDateRef} type="date" value={displayedDate} onChange={(event) => { if (event.target.value) onDateChange(event.target.value); }} className="ml-auto h-9 rounded-lg border border-neutral-200 bg-white px-2 text-xs outline-none focus:border-primary-400" /></label>}
       <div role="tablist" aria-label="Pilih hari agenda" className="mb-5 grid grid-cols-3 rounded-xl bg-neutral-50 p-1">
-        {(Object.keys(agendaByDay) as (keyof typeof agendaByDay)[]).map((day) => <button key={day} type="button" role="tab" aria-selected={selectedDay === day} onClick={() => setSelectedDay(day)} className={`min-h-10 rounded-lg px-2 text-xs font-semibold transition-colors sm:text-sm ${selectedDay === day ? 'bg-[#FBD0CC] text-neutral-900 shadow-sm' : 'text-neutral-500 hover:text-neutral-900'}`}>{day}</button>)}
+        <button type="button" role="tab" aria-selected={selectedTab === 'today'} onClick={() => onDateChange(today)} className={`min-h-10 rounded-lg px-2 text-xs font-semibold transition-colors sm:text-sm ${selectedTab === 'today' ? 'bg-[#FBD0CC] text-neutral-900 shadow-sm' : 'text-neutral-500 hover:text-neutral-900'}`}>Hari Ini</button>
+        <button type="button" role="tab" aria-selected={selectedTab === 'tomorrow'} onClick={() => onDateChange(tomorrow)} className={`min-h-10 rounded-lg px-2 text-xs font-semibold transition-colors sm:text-sm ${selectedTab === 'tomorrow' ? 'bg-[#FBD0CC] text-neutral-900 shadow-sm' : 'text-neutral-500 hover:text-neutral-900'}`}>Besok</button>
+        <button type="button" role="tab" aria-selected={selectedTab === 'custom'} onClick={() => { setShowDatePicker(true); customDateRef.current?.focus(); }} className={`min-h-10 rounded-lg px-2 text-xs font-semibold transition-colors sm:text-sm ${selectedTab === 'custom' ? 'bg-[#FBD0CC] text-neutral-900 shadow-sm' : 'text-neutral-500 hover:text-neutral-900'}`}>{selectedTab === 'custom' ? formattedCustomDate : 'Pilih Tanggal'}</button>
       </div>
-      <ol className="divide-y divide-neutral-100">
-        {agendaByDay[selectedDay].map((item) => <li key={`${item.time}-${item.title}`} className="grid grid-cols-[58px_1fr] gap-4 py-4 first:pt-2 last:pb-1 sm:grid-cols-[76px_1fr] sm:gap-5">
-          <span className="border-r border-neutral-100 pt-0.5 text-sm font-semibold tabular-nums text-primary-600 sm:text-base">{item.time}</span>
-          <div><h3 className="font-semibold text-neutral-900">{item.title}</h3><p className="mt-1 text-sm text-neutral-500">{item.place}</p></div>
+      {agenda.length === 0 ? <p className="py-6 text-center text-sm text-neutral-500">Tidak ada agenda pada tanggal ini.</p> : <ol className="divide-y divide-neutral-100">
+        {agenda.map((item) => <li key={item.id_jadwal} className="grid grid-cols-[58px_1fr] gap-4 py-4 first:pt-2 last:pb-1 sm:grid-cols-[76px_1fr] sm:gap-5">
+          <span className="border-r border-neutral-100 pt-0.5 text-sm font-semibold tabular-nums text-primary-600 sm:text-base">{item.waktu_mulai.slice(0, 5)}</span>
+          <div><h3 className="font-semibold text-neutral-900">{item.nama_lomba}</h3><p className="mt-1 text-sm text-neutral-500">{item.lokasi || 'Lokasi belum ditentukan'}</p></div>
         </li>)}
-      </ol>
+      </ol>}
     </section>
   );
 }
 
-function PanitiaContent() {
+function jakartaToday(): string {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+  const part = (type: string) => parts.find((item) => item.type === type)?.value ?? '';
+  return `${part('year')}-${part('month')}-${part('day')}`;
+}
+
+function MatchFormModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+  const [options, setOptions] = useState<MatchOptionsData | null>(null);
+  const [loadingOptions, setLoadingOptions] = useState(true);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [idLomba, setIdLomba] = useState('');
+  const [idJadwal, setIdJadwal] = useState('');
+  const [peserta1, setPeserta1] = useState('');
+  const [peserta2, setPeserta2] = useState('');
+  const [babak, setBabak] = useState('');
+  const [tanggal, setTanggal] = useState(jakartaToday);
+  const [waktuMulai, setWaktuMulai] = useState('');
+  const [waktuSelesai, setWaktuSelesai] = useState('');
+  const [status, setStatus] = useState<CreateMatchInput['status']>('Dijadwalkan');
+
+  useEffect(() => {
+    const controller = new AbortController();
+    getMatchOptions(controller.signal).then((response) => {
+      setOptions(response.data);
+      if (response.data.lomba[0]) setIdLomba(String(response.data.lomba[0].id_lomba));
+    }).catch((error: unknown) => {
+      if (!controller.signal.aborted) setFormError(error instanceof Error ? error.message : 'Opsi pertandingan gagal dimuat.');
+    }).finally(() => { if (!controller.signal.aborted) setLoadingOptions(false); });
+    return () => controller.abort();
+  }, []);
+
+  const availableSchedules = options?.jadwal.filter((item) => String(item.id_lomba) === idLomba) ?? [];
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setFormError(null);
+    if (peserta1.trim().toLocaleLowerCase('id-ID') === peserta2.trim().toLocaleLowerCase('id-ID')) {
+      setFormError('Peserta 1 dan peserta 2 harus berbeda.');
+      return;
+    }
+    if (waktuSelesai && waktuSelesai <= waktuMulai) {
+      setFormError('Waktu selesai harus setelah waktu mulai.');
+      return;
+    }
+    setSaving(true);
+    const input: CreateMatchInput = {
+      id_lomba: Number(idLomba),
+      ...(idJadwal ? { id_jadwal: Number(idJadwal) } : {}),
+      peserta_1: peserta1.trim(),
+      peserta_2: peserta2.trim(),
+      ...(babak.trim() ? { babak: babak.trim() } : {}),
+      tanggal,
+      waktu_mulai: waktuMulai,
+      ...(waktuSelesai ? { waktu_selesai: waktuSelesai } : {}),
+      status: status ?? 'Dijadwalkan',
+    };
+    try {
+      await createMatch(input);
+      onCreated();
+    } catch (error) {
+      setFormError(error instanceof ApiRequestError ? error.message : 'Pertandingan gagal disimpan. Silakan coba lagi.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const inputClass = 'h-11 w-full rounded-xl border border-neutral-200 bg-white px-3.5 text-sm text-neutral-900 outline-none focus:border-primary-400 focus:ring-3 focus:ring-primary-100';
+  return <Modal isOpen onClose={saving ? () => undefined : onClose} ariaLabel="Tambah pertandingan">
+    <form onSubmit={(event) => void handleSubmit(event)} className="p-5 sm:p-7">
+      <div className="mb-6 flex items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary-600">Manajemen pertandingan</p><h2 className="mt-1 text-xl font-semibold text-neutral-900">Tambah Pertandingan</h2><p className="mt-1 text-sm text-neutral-500">Lengkapi peserta dan jadwal pertandingan.</p></div><button type="button" aria-label="Tutup" onClick={onClose} disabled={saving} className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-50 disabled:opacity-50"><Icon name="close" /></button></div>
+      {loadingOptions ? <p role="status" className="rounded-xl bg-neutral-50 px-4 py-8 text-center text-sm text-neutral-500">Memuat pilihan lomba dan jadwal…</p> : <>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="space-y-1.5 sm:col-span-2"><span className="text-sm font-medium text-neutral-700">Lomba <span className="text-error-100">*</span></span><select required value={idLomba} onChange={(event) => { setIdLomba(event.target.value); setIdJadwal(''); }} className={inputClass}><option value="">Pilih lomba</option>{options?.lomba.map((item) => <option key={item.id_lomba} value={item.id_lomba}>{item.nama_lomba}</option>)}</select>{options?.lomba.length === 0 && <span className="block text-xs text-neutral-500">Belum ada lomba pada periode aktif.</span>}</label>
+          <label className="space-y-1.5 sm:col-span-2"><span className="text-sm font-medium text-neutral-700">Jadwal / lokasi</span><select value={idJadwal} onChange={(event) => { const value = event.target.value; setIdJadwal(value); const selected = availableSchedules.find((item) => String(item.id_jadwal) === value); if (selected) { setTanggal(selected.tanggal); if (selected.waktu_mulai) setWaktuMulai(selected.waktu_mulai.slice(0, 5)); if (selected.waktu_selesai) setWaktuSelesai(selected.waktu_selesai.slice(0, 5)); } }} className={inputClass}><option value="">Tanpa jadwal terkait</option>{availableSchedules.map((item) => <option key={item.id_jadwal} value={item.id_jadwal}>{item.tanggal} · {item.waktu_mulai?.slice(0, 5) ?? '--:--'} · {item.lokasi ?? item.nama_lomba}</option>)}</select></label>
+          <label className="space-y-1.5"><span className="text-sm font-medium text-neutral-700">Peserta 1 <span className="text-error-100">*</span></span><input required maxLength={150} value={peserta1} onChange={(event) => setPeserta1(event.target.value)} className={inputClass} /></label>
+          <label className="space-y-1.5"><span className="text-sm font-medium text-neutral-700">Peserta 2 <span className="text-error-100">*</span></span><input required maxLength={150} value={peserta2} onChange={(event) => setPeserta2(event.target.value)} className={inputClass} /></label>
+          <label className="space-y-1.5"><span className="text-sm font-medium text-neutral-700">Babak</span><input maxLength={50} value={babak} onChange={(event) => setBabak(event.target.value)} placeholder="Penyisihan / Semifinal / Final" className={inputClass} /></label>
+          <label className="space-y-1.5"><span className="text-sm font-medium text-neutral-700">Status</span><select value={status} onChange={(event) => setStatus(event.target.value as CreateMatchInput['status'])} className={inputClass}><option value="Dijadwalkan">Dijadwalkan</option><option value="Berlangsung">Berlangsung</option><option value="Selesai">Selesai</option></select></label>
+          <label className="space-y-1.5"><span className="text-sm font-medium text-neutral-700">Tanggal <span className="text-error-100">*</span></span><input required type="date" value={tanggal} onChange={(event) => setTanggal(event.target.value)} className={inputClass} /></label>
+          <div className="grid grid-cols-2 gap-3"><label className="space-y-1.5"><span className="text-sm font-medium text-neutral-700">Mulai <span className="text-error-100">*</span></span><input required type="time" value={waktuMulai} onChange={(event) => setWaktuMulai(event.target.value)} className={inputClass} /></label><label className="space-y-1.5"><span className="text-sm font-medium text-neutral-700">Selesai</span><input type="time" value={waktuSelesai} onChange={(event) => setWaktuSelesai(event.target.value)} className={inputClass} /></label></div>
+        </div>
+      </>}
+      {formError && <p role="alert" className="mt-4 rounded-xl bg-error-10 px-4 py-3 text-sm text-error-100">{formError}</p>}
+      <div className="mt-7 flex flex-col-reverse gap-2 border-t border-neutral-100 pt-5 sm:flex-row sm:justify-end"><button type="button" onClick={onClose} disabled={saving} className="min-h-11 rounded-xl border border-neutral-200 px-4 text-sm font-semibold text-neutral-600 hover:bg-neutral-50 disabled:opacity-50">Batal</button><button type="submit" disabled={saving || loadingOptions || !options?.lomba.length} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-primary-600 px-5 text-sm font-semibold text-white hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"><Icon name="check" className="size-4" />{saving ? 'Menyimpan…' : 'Simpan pertandingan'}</button></div>
+    </form>
+  </Modal>;
+}
+
+function ManagementContent({ data, tanggal, loading, error, onRetry, onDateChange, onAddMatch }: {
+  data: ManagementDashboardData | null;
+  tanggal: string;
+  loading: boolean;
+  error: string | null;
+  onRetry: () => void;
+  onDateChange: (value: string) => void;
+  onAddMatch: () => void;
+}) {
+  if (loading && !data) return <div role="status" className="rounded-2xl border border-primary-100 bg-white px-5 py-16 text-center text-sm text-neutral-500">Memuat dashboard…</div>;
+  if (error && !data) return <div className="rounded-2xl border border-error-100/30 bg-white px-5 py-12 text-center"><p role="alert" className="text-sm text-error-100">{error}</p><button type="button" onClick={onRetry} className="mt-4 rounded-xl bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white">Coba lagi</button></div>;
+  if (!data) return null;
   return <>
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-4">{panitiaMetrics.map((metric, index) => <MetricCard key={metric.label} metric={metric} index={index} />)}</div>
+    {error && <p role="alert" className="mb-5 rounded-xl bg-error-10 px-4 py-3 text-sm text-error-100">Pembaruan data gagal: {error}</p>}
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-4">
+      <MetricCard label="Total Lomba" value={data.ringkasan.total_lomba} icon="trophy" index={0} />
+      <MetricCard label="Total Pendaftar" value={data.ringkasan.total_pendaftar} icon="users" index={1} />
+      <MetricCard label="Pembayaran Lunas" value={data.ringkasan.pembayaran_lunas} icon="check" index={2} />
+      <MetricCard label="Belum Lunas" value={data.ringkasan.pembayaran_belum_lunas} icon="wallet" index={3} />
+    </div>
     <div className="mt-6 grid items-start gap-5 2xl:grid-cols-[1fr_1.02fr]">
       <section className="rounded-2xl border border-primary-100/90 bg-white p-5 shadow-[0_3px_16px_rgba(34,24,24,0.025)] sm:p-6">
-        <SectionHeading title="Sedang Berlangsung" action="Lihat semua" />
-        <div className="divide-y divide-neutral-100">
-          <MatchRow name="Tarik Tambang" place="Lapangan Timur" phase="Penyisihan" left="Ketoprak Sedap Malam" right="Nasi Padang Murah" />
-          <MatchRow name="Catur" place="Balai Desa" phase="Final" left="Setiawan Raharja" right="Rendra Hariyanto" edit />
-        </div>
-        <div className="mt-5 flex items-center gap-3 rounded-xl bg-primary-100/45 p-3.5">
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-white text-primary-600"><Icon name="calendar" className="size-4.5" /></span>
-          <p className="text-sm text-neutral-700"><span className="font-semibold">2 pertandingan</span> menunggu pembaruan hasil.</p>
-          <Icon name="chevron" className="ml-auto size-4 text-neutral-400" />
-        </div>
+        <SectionHeading title="Sedang Berlangsung" action="Tambah Pertandingan" onAction={onAddMatch} />
+        {data.sedang_berlangsung.length === 0 ? <p className="py-6 text-center text-sm text-neutral-500">Tidak ada pertandingan yang sedang berlangsung.</p> : <div className="divide-y divide-neutral-100">{data.sedang_berlangsung.map((match) => <MatchRow key={match.id_pertandingan} match={match} />)}</div>}
       </section>
-      <AgendaPanel />
+      <AgendaPanel agenda={data.agenda} tanggal={tanggal} onDateChange={onDateChange} />
     </div>
     <section className="mt-6 rounded-2xl border border-primary-100/90 bg-white p-5 shadow-[0_3px_16px_rgba(34,24,24,0.025)] sm:p-6">
       <SectionHeading title="Akses Cepat" />
@@ -292,48 +372,6 @@ function PanitiaContent() {
               : <button type="button" className={`${className} w-full`}>{content}</button>}
           </div>;
         })}
-      </div>
-    </section>
-  </>;
-}
-
-const bars = [34, 52, 43, 68, 48, 82, 59, 72, 51, 92, 66, 78];
-
-function AdminContent() {
-  return <>
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-4">{adminMetrics.map((metric, index) => <MetricCard key={metric.label} metric={metric} index={index} />)}</div>
-    <div className="mt-6 grid items-start gap-5 2xl:grid-cols-[1.2fr_0.8fr]">
-      <section className="rounded-2xl border border-primary-100/90 bg-white p-5 shadow-[0_3px_16px_rgba(34,24,24,0.025)] sm:p-6">
-        <div className="mb-6 flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-[18px] font-semibold text-neutral-900 sm:text-xl">Ringkasan Kegiatan</h2><p className="mt-1 text-sm text-neutral-500">Aktivitas pendaftaran selama 12 hari terakhir</p></div><button type="button" className="inline-flex items-center gap-2 rounded-lg border border-neutral-100 px-3 py-2 text-xs font-semibold text-neutral-600"><Icon name="calendar" className="size-4" />12–23 Agustus<Icon name="chevron" className="size-3.5" /></button></div>
-        <div className="flex h-52 items-end gap-2 border-b border-neutral-100 px-1 sm:gap-3">
-          {bars.map((height, index) => <div key={index} className="group flex h-full flex-1 flex-col justify-end"><div className={`w-full rounded-t-md transition-colors ${index === 9 ? 'bg-primary-500' : 'bg-primary-100 group-hover:bg-primary-200'}`} style={{ height: `${height}%` }} title={`${height} pendaftar`} /></div>)}
-        </div>
-        <div className="mt-2 flex justify-between px-1 text-[11px] text-neutral-400"><span>12 Agu</span><span>15 Agu</span><span>18 Agu</span><span>21 Agu</span><span>23 Agu</span></div>
-        <div className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-neutral-500"><span className="inline-flex items-center gap-2"><i className="size-2.5 rounded-full bg-primary-500" />Pendaftar</span><span className="inline-flex items-center gap-2"><i className="size-2.5 rounded-full bg-secondary-400" />Pembayaran terverifikasi</span><span className="ml-auto font-semibold text-success-200">+18,6% dari periode lalu</span></div>
-      </section>
-
-      <section className="rounded-2xl border border-primary-100/90 bg-white p-5 shadow-[0_3px_16px_rgba(34,24,24,0.025)] sm:p-6">
-        <SectionHeading title="Aktivitas Terbaru" action="Lihat aktivitas" />
-        <ol className="space-y-5">
-          {[
-            { initials: 'AD', name: 'Adi Pratama', event: 'menambahkan lomba', target: 'Balap Karung Helm', time: '5 menit lalu', color: 'bg-secondary-100 text-secondary-700' },
-            { initials: 'SW', name: 'Siti Wulandari', event: 'memverifikasi pembayaran', target: 'Iuran Keluarga No. 24', time: '28 menit lalu', color: 'bg-primary-100 text-primary-700' },
-            { initials: 'BR', name: 'Budi Raharjo', event: 'memperbarui jadwal', target: 'Panjat Pinang', time: '1 jam lalu', color: 'bg-neutral-100 text-neutral-700' },
-            { initials: 'RS', name: 'Rina Suhartini', event: 'mengirim pengumuman', target: 'Rapat panitia', time: '3 jam lalu', color: 'bg-success-10 text-success-200' },
-          ].map((item) => <li key={item.name} className="flex gap-3"><span className={`flex size-9 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${item.color}`}>{item.initials}</span><div className="min-w-0 flex-1"><p className="text-sm leading-5 text-neutral-700"><span className="font-semibold text-neutral-900">{item.name}</span> {item.event} <span className="font-medium text-neutral-800">{item.target}</span></p><p className="mt-1 text-xs text-neutral-400">{item.time}</p></div></li>)}
-        </ol>
-      </section>
-    </div>
-    <section className="mt-6 rounded-2xl border border-primary-100/90 bg-white p-5 shadow-[0_3px_16px_rgba(34,24,24,0.025)] sm:p-6">
-      <SectionHeading title="Perlu Perhatian" action="Lihat semua" />
-      <div className="grid gap-3 md:grid-cols-3">
-        {[
-          { title: 'Pembayaran menunggu', count: '9', desc: 'Perlu verifikasi bukti pembayaran', icon: 'wallet' as const },
-          { title: 'Pendaftar baru', count: '6', desc: 'Belum ditinjau panitia lomba', icon: 'users' as const },
-          { title: 'Jadwal belum lengkap', count: '2', desc: 'Lomba belum memiliki waktu pelaksanaan', icon: 'calendar' as const },
-        ].map((item) => <button key={item.title} type="button" className="flex items-center gap-3 rounded-xl border border-neutral-100 p-4 text-left transition-colors hover:border-primary-200 hover:bg-primary-100/25">
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-secondary-100 text-secondary-700"><Icon name={item.icon} /></span><span className="min-w-0 flex-1"><span className="block text-sm font-semibold text-neutral-900">{item.title}</span><span className="mt-1 block text-xs text-neutral-500">{item.desc}</span></span><span className="text-xl font-semibold tabular-nums text-neutral-900">{item.count}</span>
-        </button>)}
       </div>
     </section>
   </>;
@@ -370,10 +408,40 @@ export function ManagementLayout({ role, userName, title, activeItem, children }
 
 export function ManagementDashboard({ role, userName }: { role: Role; userName: string }) {
   const isAdmin = role === 'admin';
+  const [dashboard, setDashboard] = useState<ManagementDashboardData | null>(null);
+  const [tanggal, setTanggal] = useState(jakartaToday);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [showMatchModal, setShowMatchModal] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoading(true);
+    setLoadError(null);
+    getManagementDashboard(tanggal, controller.signal).then((response) => {
+      setDashboard(response.data);
+      setTanggal(response.data.tanggal_filter);
+    }).catch((error: unknown) => {
+      if (!controller.signal.aborted) setLoadError(error instanceof Error ? error.message : 'Dashboard gagal dimuat.');
+    }).finally(() => {
+      if (!controller.signal.aborted) setLoading(false);
+    });
+    return () => controller.abort();
+  }, [tanggal, refreshKey]);
+
+  const handleDateChange = useCallback((value: string) => setTanggal(value), []);
+  const refresh = useCallback(() => setRefreshKey((current) => current + 1), []);
+  const handleMatchCreated = useCallback(() => {
+    setShowMatchModal(false);
+    refresh();
+  }, [refresh]);
+
   return <ManagementLayout role={role} userName={userName} title="Dashboard" activeItem="dashboard">
     <div className="mb-7 flex flex-wrap items-end justify-between gap-4 sm:mb-8">
-      <div><p className="mb-2 text-sm font-medium text-primary-600">{isAdmin ? 'Pusat kendali acara' : 'Selamat datang kembali'}</p><h1 className="text-[26px] font-semibold tracking-tight text-neutral-900 sm:text-[32px]">{isAdmin ? 'Dashboard Admin' : 'Selamat Datang, Panitia'}</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-500">{isAdmin ? 'Pantau ringkasan kegiatan dan kelola seluruh operasional acara.' : 'Semua yang perlu Anda pantau untuk menjaga acara berjalan lancar.'}</p></div>
+      <div><p className="mb-2 text-sm font-medium text-primary-600">{isAdmin ? 'Pusat kendali acara' : 'Selamat datang kembali'}</p><h1 className="text-[26px] font-semibold tracking-tight text-neutral-900 sm:text-[32px]">{isAdmin ? 'Dashboard Admin' : 'Selamat Datang, Panitia'}</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-500">Semua yang perlu Anda pantau untuk menjaga acara berjalan lancar.</p></div>
     </div>
-    {isAdmin ? <AdminContent /> : <PanitiaContent />}
+    <ManagementContent data={dashboard} tanggal={tanggal} loading={loading} error={loadError} onRetry={refresh} onDateChange={handleDateChange} onAddMatch={() => setShowMatchModal(true)} />
+    {showMatchModal && <MatchFormModal onClose={() => setShowMatchModal(false)} onCreated={handleMatchCreated} />}
   </ManagementLayout>;
 }
