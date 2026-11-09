@@ -36,7 +36,10 @@ export async function POST(request: NextRequest) {
     return sessionResponse(await backendCreateMatch(token, body), 201);
   } catch (error) {
     if (error instanceof ManagementDashboardError || error instanceof AuthServiceError) {
-      return sessionResponse({ message: error.message, ...(error.errors ? { errors: error.errors } : {}) }, error.status);
+      const body = error instanceof ManagementDashboardError && error.errors
+        ? { message: error.message, errors: error.errors }
+        : { message: error.message };
+      return sessionResponse(body, error.status);
     }
     return sessionResponse({ message: 'Pertandingan gagal disimpan. Silakan coba lagi.' }, 500);
   }

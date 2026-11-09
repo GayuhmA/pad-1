@@ -162,13 +162,14 @@ export async function backendMatchOptions(token: string): Promise<MatchOptionsRe
   }
   const lomba = data.lomba.map((value) => {
     const item = record(value);
-    if (item.jenis_pendaftaran !== 'Individu' && item.jenis_pendaftaran !== 'Beregu') {
+    const jenisPendaftaran = item.jenis_pendaftaran;
+    if (jenisPendaftaran !== 'Individu' && jenisPendaftaran !== 'Beregu') {
       throw new ManagementDashboardError(502, 'Respons opsi pertandingan tidak valid. Silakan coba lagi.');
     }
     return {
       id_lomba: positiveOrZeroInteger(item.id_lomba),
       nama_lomba: text(item.nama_lomba),
-      jenis_pendaftaran: item.jenis_pendaftaran,
+      jenis_pendaftaran: jenisPendaftaran as 'Individu' | 'Beregu',
     };
   });
   const jadwal = data.jadwal.map((value) => {
