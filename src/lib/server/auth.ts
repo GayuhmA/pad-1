@@ -62,10 +62,20 @@ export function readAccount(value: unknown, activeFromLogin = false): User {
   const account = object(value);
   const role = object(account.role);
   const warga = object(account.warga);
+  const rt = warga.rt == null ? null : object(warga.rt);
+  const rw = warga.rw == null ? null : object(warga.rw);
+  const optionalText = (value: unknown) => value == null ? null : typeof value === 'string' ? value : undefined;
+  const tempatLahir = optionalText(warga.tempat_lahir);
+  const tanggalLahir = optionalText(warga.tanggal_lahir);
+  const alamat = optionalText(warga.alamat);
+  const nomorRt = optionalText(rt?.nomor_rt);
+  const nomorRw = optionalText(rw?.nomor_rw);
   if (!Number.isInteger(account.id_akun) || typeof account.username !== 'string' ||
       !account.username.trim() || typeof role.nama_role !== 'string' || !role.nama_role.trim() ||
       typeof warga.nama !== 'string' || !warga.nama.trim() ||
       (warga.no_hp != null && typeof warga.no_hp !== 'string') ||
+      tempatLahir === undefined || tanggalLahir === undefined || alamat === undefined ||
+      nomorRt === undefined || nomorRw === undefined ||
       (!activeFromLogin && typeof account.status !== 'string')) {
     throw new AuthServiceError(502, 'Respons layanan akun tidak valid. Silakan coba lagi.');
   }
@@ -75,6 +85,11 @@ export function readAccount(value: unknown, activeFromLogin = false): User {
     nama: warga.nama,
     role: role.nama_role,
     phone: typeof warga.no_hp === 'string' ? warga.no_hp : null,
+    tempat_lahir: tempatLahir,
+    tanggal_lahir: tanggalLahir,
+    alamat,
+    nomor_rt: nomorRt,
+    nomor_rw: nomorRw,
     is_active: activeFromLogin || account.status === 'Aktif',
   };
 }

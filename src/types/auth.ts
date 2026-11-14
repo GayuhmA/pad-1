@@ -5,6 +5,11 @@ export interface User {
   nama: string;
   role: string;
   phone: string | null;
+  tempat_lahir: string | null;
+  tanggal_lahir: string | null;
+  alamat: string | null;
+  nomor_rt: string | null;
+  nomor_rw: string | null;
   is_active: boolean;
 }
 
