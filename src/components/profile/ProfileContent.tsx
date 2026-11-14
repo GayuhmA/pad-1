@@ -6,6 +6,7 @@ import { Avatar } from '@/components/Avatar';
 import { Badge } from '@/components/Badge';
 import { Button } from '@/components/Button';
 import { useResidentProfile } from '@/hooks/use-resident-profile';
+import { formatBirthDetails } from '@/lib/profile';
 import { useAuthStore } from '@/stores/auth-store';
 
 function ProfileField({ label, children }: { label: string; children: ReactNode }) {
@@ -52,7 +53,7 @@ export function ProfileContent() {
               <Badge color="secondary" className="min-w-24">{profile.role}</Badge>
             </div>
           </div>
-          <Button size="S" disabled aria-describedby="profile-update-note" className="min-h-11 shrink-0 self-start font-bold shadow-sm">Edit Profil</Button>
+          <Button size="S" disabled className="min-h-11 shrink-0 self-start font-bold shadow-sm">Edit Profil</Button>
         </section>
 
         <div className="grid items-start gap-5 lg:grid-cols-[3fr_2fr]">
@@ -61,11 +62,10 @@ export function ProfileContent() {
             <dl className="space-y-5">
               <ProfileField label="Nama Lengkap">{profile.name}</ProfileField>
               <ProfileField label="Username">{profile.username}</ProfileField>
-              <ProfileField label="Tempat Tanggal Lahir">Belum tersedia</ProfileField>
-              <ProfileField label="Alamat Sesuai KTP">Belum tersedia</ProfileField>
+              <ProfileField label="Tempat Tanggal Lahir">{formatBirthDetails(profile.birthPlace, profile.birthDate)}</ProfileField>
+              <ProfileField label="Alamat Sesuai KTP">{profile.address || 'Belum tersedia'}</ProfileField>
               <ProfileField label="Nomor WhatsApp / Telepon">{profile.phone || 'Belum tersedia'}</ProfileField>
             </dl>
-            <p id="profile-update-note" className="mt-5 text-body-3 text-neutral-500">Perubahan profil belum tersedia. Hubungi pengurus jika data Anda perlu diperbarui.</p>
           </section>
 
           <div className="flex flex-col gap-5">

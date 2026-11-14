@@ -7,10 +7,13 @@ export function getResidentProfile(user: User | null): ResidentProfile | null {
     name: user.nama,
     username: user.username,
     role: user.role.toLowerCase() === 'warga' ? 'Warga' : user.role,
-    birthPlace: '',
-    birthDate: '',
-    address: '',
-    locality: '',
+    birthPlace: user.tempat_lahir ?? '',
+    birthDate: user.tanggal_lahir ?? '',
+    address: user.alamat ?? '',
+    locality: [
+      user.nomor_rt ? `RT ${user.nomor_rt}` : '',
+      user.nomor_rw ? `RW ${user.nomor_rw}` : '',
+    ].filter(Boolean).join(' / '),
     phone: user.phone ?? '',
   };
 }
