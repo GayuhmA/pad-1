@@ -41,7 +41,11 @@ function scheduleTime(schedule: RiwayatJadwalLomba): string | null {
 }
 
 function displayStatus(item: RiwayatPendaftaran): string {
-  return normalize(item.status) === "dibatalkan" ? "Dibatalkan" : "Berhasil";
+  const status = normalize(item.status);
+  if (status === "menunggu") return "Menunggu";
+  if (status === "dibatalkan") return "Dibatalkan";
+  if (status === "berhasil") return "Berhasil";
+  return item.status;
 }
 
 function statusBadge(status: string): {
@@ -51,6 +55,9 @@ function statusBadge(status: string): {
   const value = normalize(status);
   if (value === "berhasil") {
     return { color: "success" };
+  }
+  if (value === "menunggu") {
+    return { color: "secondary" };
   }
   if (value === "dibatalkan") {
     return { color: "primary", className: "bg-[#E53935] text-white" };
@@ -115,6 +122,7 @@ export default function PendaftaranPage() {
       } catch {
         // The cancellation already succeeded; keep the safe local status until the next reload.
       }
+      window.dispatchEvent(new Event("pad-registration-changed"));
 
       setCancelTarget(null);
       setNotice(response.message || `Pendaftaran ${target.lomba.nama_lomba} berhasil dibatalkan.`);
@@ -127,7 +135,10 @@ export default function PendaftaranPage() {
     }
   }
 
-  const statuses = ["Semua", "Berhasil", "Dibatalkan"] as const;
+  const statuses = useMemo(
+    () => ["Semua", ...new Set(items.map(displayStatus))],
+    [items],
+  );
 
   const filteredItems = useMemo(() => {
     const query = normalize(searchQuery);
