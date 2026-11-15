@@ -8,11 +8,14 @@ import { Modal } from "@/components/Modal";
 import { PageSkeleton } from "@/components/skeletons/PageSkeleton";
 import { ApiRequestError } from "@/lib/api/client";
 import { daftarLomba, getDaftarLomba } from "@/lib/api/lomba";
+import { getRiwayatPendaftaran } from "@/lib/api/pendaftaran";
+import { useAuthStore } from "@/stores/auth-store";
 import {
   buildAgendaDateTabs,
   formatTanggalIndonesia,
   formatWaktu,
   getScheduleTimingStatus,
+  isValidIsoDate,
   jakartaToday,
 } from "@/lib/lomba-date";
 import type { JadwalLomba, Lomba } from "@/types/lomba";
@@ -32,6 +35,31 @@ interface AgendaItem {
 
 function normalize(value: string): string {
   return value.toLocaleLowerCase("id-ID").trim();
+}
+
+function categoryLabel(value: string): string {
+  const compact = normalize(value).replace(/[\s-]+/g, "");
+  if (compact === "dewasa") return "Dewasa";
+  if (compact === "umum") return "Umum";
+  if (compact === "anakanak") return "Anak-anak";
+  return value.trim();
+}
+
+function getAge(birthDate: string | null, now: Date): number | null {
+  if (!birthDate || !isValidIsoDate(birthDate)) return null;
+  const [birthYear, birthMonth, birthDay] = birthDate.split("-").map(Number);
+  const [year, month, day] = jakartaToday(now).split("-").map(Number);
+  let age = year - birthYear;
+  if (month < birthMonth || (month === birthMonth && day < birthDay)) age--;
+  return age >= 0 ? age : null;
+}
+
+function isEligibleForCategory(category: string, age: number | null): boolean {
+  if (category === "Umum") return true;
+  if (age === null) return false;
+  if (category === "Anak-anak") return age <= 10;
+  if (category === "Dewasa") return age >= 11;
+  return true;
 }
 
 function isGenericDescription(value: string | null): boolean {
@@ -61,6 +89,7 @@ function scheduleTime(jadwal: JadwalLomba): string {
 }
 
 export default function LombaPage() {
+  const birthDate = useAuthStore((state) => state.user?.tanggal_lahir ?? null);
   const [lombaList, setLombaList] = useState<Lomba[]>([]);
   const [availableDates, setAvailableDates] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -86,8 +115,19 @@ export default function LombaPage() {
       setIsLoading(true);
       setLoadError(null);
       try {
-        const response = await getDaftarLomba(controller.signal);
-        setLombaList(response.data);
+        const [response, history] = await Promise.all([
+          getDaftarLomba(controller.signal),
+          getRiwayatPendaftaran(controller.signal).catch(() => null),
+        ]);
+        if (controller.signal.aborted) return;
+        const activeLombaIds = history
+          ? new Set(history.data
+            .filter((item) => normalize(item.status) !== "dibatalkan")
+            .map((item) => item.lomba.id_lomba))
+          : null;
+        setLombaList(activeLombaIds
+          ? response.data.map((item) => ({ ...item, sudah_mendaftar: activeLombaIds.has(item.id_lomba) }))
+          : response.data);
         setAvailableDates(response.tanggal_tersedia);
       } catch (error) {
         if (controller.signal.aborted) return;
@@ -99,6 +139,12 @@ export default function LombaPage() {
     void load();
     return () => controller.abort();
   }, [retryKey]);
+
+  useEffect(() => {
+    const refreshRegistrations = () => setRetryKey((value) => value + 1);
+    window.addEventListener("pad-registration-changed", refreshRegistrations);
+    return () => window.removeEventListener("pad-registration-changed", refreshRegistrations);
+  }, []);
 
   useEffect(() => {
     if (!notice) return;
@@ -117,13 +163,18 @@ export default function LombaPage() {
   const categories = useMemo(() => {
     const values = lombaList
       .map((item) => item.kategori?.nama_kategori)
-      .filter((value): value is string => Boolean(value));
-    return ["Semua", ...new Set(values)];
+      .filter((value): value is string => Boolean(value))
+      .map(categoryLabel);
+    const extraCategories = [...new Set(values)].filter(
+      (value) => !["Dewasa", "Umum", "Anak-anak"].includes(value),
+    );
+    return ["Semua", "Dewasa", "Umum", "Anak-anak", ...extraCategories];
   }, [lombaList]);
 
   const query = normalize(searchQuery);
+  const residentAge = getAge(birthDate, now);
   const matchesCommonFilters = useCallback((lomba: Lomba): boolean => {
-    if (activeCategory !== "Semua" && lomba.kategori?.nama_kategori !== activeCategory) return false;
+    if (activeCategory !== "Semua" && (!lomba.kategori || categoryLabel(lomba.kategori.nama_kategori) !== activeCategory)) return false;
     if (!matchesStatus(lomba, activeStatus, now)) return false;
     if (!query) return true;
     const searchable = [
@@ -320,7 +371,9 @@ export default function LombaPage() {
                   {filteredLomba.map((lomba) => {
                     const jadwal = primarySchedule(lomba);
                     const isOpen = normalize(lomba.status) === "dibuka";
-                    const canRegister = isOpen && !lomba.sudah_mendaftar;
+                    const category = categoryLabel(lomba.kategori?.nama_kategori ?? "Umum");
+                    const isAgeEligible = isEligibleForCategory(category, residentAge);
+                    const canRegister = isOpen && !lomba.sudah_mendaftar && isAgeEligible;
                     return (
                       <article key={lomba.id_lomba} className="flex flex-col rounded-2xl bg-white p-6 shadow-sm">
                         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
@@ -362,7 +415,13 @@ export default function LombaPage() {
                           disabled={!canRegister}
                           onClick={() => setSelectedLomba(lomba)}
                         >
-                          {lomba.sudah_mendaftar ? "Sudah Terdaftar" : isOpen ? "Daftar Sekarang" : "Pendaftaran Ditutup"}
+                          {lomba.sudah_mendaftar
+                            ? "Sudah Terdaftar"
+                            : !isAgeEligible && isOpen
+                              ? "Tidak Sesuai Umur"
+                              : isOpen
+                                ? "Daftar Sekarang"
+                                : "Pendaftaran Ditutup"}
                         </Button>
                       </article>
                     );
