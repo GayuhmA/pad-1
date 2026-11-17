@@ -1,4 +1,4 @@
-import type { NotificationItem } from '@/lib/data/notifications';
+import type { NotificationItem } from '@/types/notifications';
 
 export type NotificationFilter = 'all' | 'unread';
 
