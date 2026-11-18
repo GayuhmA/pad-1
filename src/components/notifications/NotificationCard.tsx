@@ -1,5 +1,5 @@
 import { Icon } from '@/components/Icon';
-import type { NotificationItem } from '@/lib/data/notifications';
+import type { NotificationItem } from '@/types/notifications';
 import { formatNotificationAge } from '@/lib/notifications';
 
 interface NotificationCardProps {

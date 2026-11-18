@@ -6,7 +6,7 @@ import { Button } from '@/components/Button';
 import { AgendaBanner } from '@/components/notifications/AgendaBanner';
 import { NotificationCard } from '@/components/notifications/NotificationCard';
 import { NotificationDetails } from '@/components/notifications/NotificationDetails';
-import { NEXT_AGENDA, NOTIFICATION_DEMO_NOW } from '@/lib/data/notifications';
+import { NEXT_AGENDA } from '@/lib/data/notifications';
 import { filterNotifications, type NotificationFilter } from '@/lib/notifications';
 import { useNotificationStore } from '@/stores/notification-store';
 
@@ -17,21 +17,25 @@ const FILTERS: { value: NotificationFilter; label: string }[] = [
 
 export function NotificationCenter() {
   const notifications = useNotificationStore((state) => state.notifications);
+  const isLoading = useNotificationStore((state) => state.isLoading);
+  const error = useNotificationStore((state) => state.error);
+  const loadNotifications = useNotificationStore((state) => state.loadNotifications);
   const markAsRead = useNotificationStore((state) => state.markAsRead);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<NotificationFilter>('all');
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [now, setNow] = useState(NOTIFICATION_DEMO_NOW);
+  const [now, setNow] = useState(() => Date.now());
   const filterRef = useRef<HTMLDivElement>(null);
   const openerRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
-    const mountedAt = Date.now();
-    const timer = window.setInterval(() => {
-      setNow(NOTIFICATION_DEMO_NOW + Date.now() - mountedAt);
-    }, 1000);
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    void loadNotifications();
+  }, [loadNotifications]);
 
   const visibleNotifications = filterNotifications(notifications, query, filter);
   const selectedNotification = notifications.find((item) => item.id === selectedId);
@@ -100,10 +104,10 @@ export function NotificationCenter() {
           ) : (
             <div className="rounded-xl bg-white px-6 py-14 text-center">
               <h2 className="text-h7 font-bold text-neutral-900">
-                {query.trim() ? 'Pesan tidak ditemukan' : 'Semua notifikasi sudah dibaca'}
+                {isLoading ? 'Memuat notifikasi…' : error ? 'Notifikasi belum dapat dimuat' : query.trim() ? 'Pesan tidak ditemukan' : 'Semua notifikasi sudah dibaca'}
               </h2>
               <p className="mt-2 text-body-2 text-neutral-500">
-                {query.trim() ? 'Coba gunakan kata kunci lain.' : 'Pilih Semua untuk melihat kembali pesan anda.'}
+                {error || (query.trim() ? 'Coba gunakan kata kunci lain.' : 'Pilih Semua untuk melihat kembali pesan anda.')}
               </p>
             </div>
           )}

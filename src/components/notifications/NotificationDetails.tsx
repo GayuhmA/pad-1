@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef } from 'react';
 import { Button } from '@/components/Button';
-import type { NotificationItem } from '@/lib/data/notifications';
+import type { NotificationItem } from '@/types/notifications';
 
 interface NotificationDetailsProps {
   notification: NotificationItem;
