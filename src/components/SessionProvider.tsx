@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/auth-store';
 import { createSessionChannel, SESSION_EVENT_KEY } from '@/lib/session-sync';
 import { useAppStore } from '@/stores/app-store';
 import { useProfileStore } from '@/stores/profile-store';
+import { useNotificationStore } from '@/stores/notification-store';
 
 export function SessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
@@ -13,7 +14,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     void useAuthStore.getState().fetchUser();
     const revalidate = () => {
       const state = useAuthStore.getState();
-      if (document.visibilityState === 'visible' && state.status !== 'unauthenticated') void state.fetchUser(true);
+      if (document.visibilityState === 'visible' && state.status !== 'unauthenticated') {
+        void state.fetchUser(true);
+        if (state.user) void useNotificationStore.getState().fetchUnreadCount();
+      }
     };
     const sync = () => { void useAuthStore.getState().syncSession(); };
     const onStorage = (event: StorageEvent) => { if (event.key === SESSION_EVENT_KEY) sync(); };
@@ -28,6 +32,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       if (state.user?.id !== previous.user?.id) {
         useProfileStore.getState().clearDrafts();
         useAppStore.getState().closeMobileMenu();
+        const notifications = useNotificationStore.getState();
+        notifications.reset();
+        if (state.user) void notifications.fetchUnreadCount();
       }
     });
     return () => {

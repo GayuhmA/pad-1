@@ -22,7 +22,7 @@ export function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
   const { isMobileMenuOpen, toggleMobileMenu, closeMobileMenu } = useAppStore();
-  const hasUnreadNotifications = useNotificationStore((state) => state.notifications.some((item) => !item.isRead));
+  const hasUnreadNotifications = useNotificationStore((state) => state.unreadCount > 0);
   const isNotificationPage = pathname === '/notifikasi';
   const isProfilePage = pathname === '/profile';
   const { profile } = useResidentProfile();
