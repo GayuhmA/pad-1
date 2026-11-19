@@ -48,7 +48,7 @@ export function Icon({ name, className = 'size-5' }: { name: IconName; className
   );
 }
 
-type NavigationKey = 'dashboard' | 'competitions' | null;
+type NavigationKey = 'dashboard' | 'competitions' | 'registrations' | 'dues' | 'messages' | 'documentation' | 'history' | null;
 
 const navigation: Record<Role, { label: string; groups: { title: string; items: { label: string; icon: IconName; key: NavigationKey }[] }[] }> = {
   panitia: {
@@ -56,22 +56,25 @@ const navigation: Record<Role, { label: string; groups: { title: string; items: 
     groups: [
       { title: 'RUANG PANITIA', items: [
         { label: 'Dashboard', icon: 'grid', key: 'dashboard' }, { label: 'Kelola Lomba', icon: 'trophy', key: 'competitions' },
-        { label: 'Kelola Pendaftaran', icon: 'users', key: null }, { label: 'Kelola Iuran', icon: 'wallet', key: null },
+        { label: 'Kelola Pendaftaran', icon: 'users', key: 'registrations' }, { label: 'Kelola Iuran', icon: 'wallet', key: 'dues' },
       ] },
       { title: 'LAINNYA', items: [
-        { label: 'Pesan', icon: 'mail', key: null }, { label: 'Dokumentasi', icon: 'image', key: null }, { label: 'Histori', icon: 'clock', key: null },
+        { label: 'Pesan', icon: 'mail', key: 'messages' }, { label: 'Dokumentasi', icon: 'image', key: 'documentation' }, { label: 'Histori', icon: 'clock', key: 'history' },
       ] },
     ],
   },
   admin: {
     label: 'Administrator',
     groups: [
-      { title: 'PANEL ADMIN', items: [
-        { label: 'Dashboard', icon: 'grid', key: 'dashboard' }, { label: 'Kelola Panitia', icon: 'shield', key: null },
-        { label: 'Data Warga', icon: 'users', key: null }, { label: 'Data Lomba', icon: 'trophy', key: 'competitions' },
+      { title: 'RUANG PANITIA', items: [
+        { label: 'Dashboard', icon: 'grid', key: 'dashboard' }, { label: 'Kelola Lomba', icon: 'trophy', key: 'competitions' },
+        { label: 'Kelola Pendaftaran', icon: 'users', key: 'registrations' }, { label: 'Kelola Iuran', icon: 'wallet', key: 'dues' },
       ] },
-      { title: 'PENGELOLAAN', items: [
-        { label: 'Pembayaran', icon: 'wallet', key: null }, { label: 'Pengumuman', icon: 'megaphone', key: null }, { label: 'Pengaturan', icon: 'settings', key: null },
+      { title: 'KHUSUS ADMIN', items: [
+        { label: 'Kelola Warga', icon: 'users', key: null }, { label: 'Kelola Panitia', icon: 'shield', key: null },
+      ] },
+      { title: 'LAINNYA', items: [
+        { label: 'Pesan', icon: 'mail', key: 'messages' }, { label: 'Dokumentasi', icon: 'image', key: 'documentation' }, { label: 'Histori', icon: 'clock', key: 'history' },
       ] },
     ],
   },
@@ -136,10 +139,9 @@ function Sidebar({ role, userName, activeItem, onClose }: { role: Role; userName
                 const itemContent = <>
                     <Icon name={item.icon} className={`size-5.25 shrink-0 ${active ? 'text-primary-600' : 'text-neutral-400 group-hover:text-primary-600'}`} />
                     <span>{item.label}</span>
-                    {item.label === 'Pesan' && <span className="ml-auto rounded-full bg-primary-600 px-2 py-0.5 text-[10px] font-bold text-white">3</span>}
                 </>;
-                const itemClass = `group flex min-h-12 w-full items-center gap-3 rounded-xl px-3.5 text-left text-[14px] font-semibold transition-colors ${active ? 'bg-primary-100/70 text-primary-700' : 'text-neutral-700'}`;
-                const href = item.key === 'dashboard' ? '/dashboard' : item.key === 'competitions' ? '/dashboard/lomba' : null;
+                const itemClass = `group flex min-h-12 w-full items-center gap-3 rounded-xl px-3.5 text-left text-[14px] font-semibold transition-colors ${active ? 'bg-[#FFE0DD] text-primary-700' : 'text-neutral-700'}`;
+                const href = item.key === 'dashboard' ? '/dashboard' : item.key === 'competitions' ? '/dashboard/lomba' : item.key === 'registrations' ? '/dashboard/pendaftaran' : item.key === 'dues' ? '/dashboard/iuran' : item.key === 'messages' ? '/dashboard/pesan' : item.key === 'documentation' ? '/dashboard/dokumentasi' : item.key === 'history' ? '/dashboard/histori' : null;
                 return <li key={item.label}>
                   {href
                     ? <Link href={href} onClick={onClose} aria-current={active ? 'page' : undefined} className={itemClass}>{itemContent}</Link>
@@ -417,8 +419,6 @@ export function ManagementDashboard({ role, userName }: { role: Role; userName: 
 
   useEffect(() => {
     const controller = new AbortController();
-    setLoading(true);
-    setLoadError(null);
     getManagementDashboard(tanggal, controller.signal).then((response) => {
       setDashboard(response.data);
       setTanggal(response.data.tanggal_filter);
@@ -430,8 +430,16 @@ export function ManagementDashboard({ role, userName }: { role: Role; userName: 
     return () => controller.abort();
   }, [tanggal, refreshKey]);
 
-  const handleDateChange = useCallback((value: string) => setTanggal(value), []);
-  const refresh = useCallback(() => setRefreshKey((current) => current + 1), []);
+  const handleDateChange = useCallback((value: string) => {
+    setLoading(true);
+    setLoadError(null);
+    setTanggal(value);
+  }, []);
+  const refresh = useCallback(() => {
+    setLoading(true);
+    setLoadError(null);
+    setRefreshKey((current) => current + 1);
+  }, []);
   const handleMatchCreated = useCallback(() => {
     setShowMatchModal(false);
     refresh();

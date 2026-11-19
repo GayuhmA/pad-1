@@ -2,7 +2,12 @@
 
 import Link from 'next/link';
 import { CompetitionManagement } from '@/components/management/CompetitionManagement';
+import { DuesManagement } from '@/components/management/DuesManagement';
+import { DocumentationManagement } from '@/components/management/DocumentationManagement';
+import { HistoryManagement } from '@/components/management/HistoryManagement';
 import { ManagementDashboard } from '@/components/management/ManagementDashboard';
+import { MessageManagement } from '@/components/management/MessageManagement';
+import { RegistrationManagement } from '@/components/management/RegistrationManagement';
 import { SessionStatus } from '@/components/SessionStatus';
 import { useRequireAuth } from '@/hooks/use-require-auth';
 import { getManagementRole, type ManagementRole } from '@/lib/management-role';
@@ -23,7 +28,7 @@ function NoManagementAccess({ role }: { role: string }) {
   );
 }
 
-export function ManagementRoute({ page }: { page: 'dashboard' | 'competitions' }) {
+export function ManagementRoute({ page }: { page: 'dashboard' | 'competitions' | 'registrations' | 'dues' | 'messages' | 'documentation' | 'history' }) {
   const { isReady } = useRequireAuth();
   const user = useAuthStore((state) => state.user);
 
@@ -31,7 +36,11 @@ export function ManagementRoute({ page }: { page: 'dashboard' | 'competitions' }
   const role: ManagementRole | null = getManagementRole(user.role);
   if (!role) return <NoManagementAccess role={user.role} />;
 
-  return page === 'dashboard'
-    ? <ManagementDashboard role={role} userName={user.nama} />
-    : <CompetitionManagement role={role} userName={user.nama} />;
+  if (page === 'dashboard') return <ManagementDashboard role={role} userName={user.nama} />;
+  if (page === 'competitions') return <CompetitionManagement role={role} userName={user.nama} />;
+  if (page === 'dues') return <DuesManagement role={role} userName={user.nama} />;
+  if (page === 'messages') return <MessageManagement role={role} userName={user.nama} />;
+  if (page === 'documentation') return <DocumentationManagement role={role} userName={user.nama} />;
+  if (page === 'history') return <HistoryManagement role={role} userName={user.nama} />;
+  return <RegistrationManagement role={role} userName={user.nama} />;
 }
