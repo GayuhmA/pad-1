@@ -1,17 +1,56 @@
 import { create } from 'zustand';
-import type { ResidentProfile } from '@/lib/data/profile';
+import { updateProfil, updateUsername, updatePassword } from '@/lib/api/profile';
+import type { UpdateProfilRequest, UpdateUsernameRequest, UpdatePasswordRequest } from '@/lib/api/profile';
+import { ApiRequestError } from '@/lib/api/client';
 
 interface ProfileState {
-  drafts: Record<string, ResidentProfile>;
-  saveDraft: (accountKey: string, profile: ResidentProfile) => void;
-  clearDrafts: () => void;
+  isSaving: boolean;
+  error: string | null;
+  saveProfile: (data: UpdateProfilRequest) => Promise<void>;
+  saveUsername: (data: UpdateUsernameRequest) => Promise<void>;
+  savePassword: (data: UpdatePasswordRequest) => Promise<void>;
+  clearError: () => void;
 }
 
-// Session-only drafts until a profile update endpoint is available.
+const errorMessage = (error: unknown) =>
+  error instanceof ApiRequestError ? error.message : 'Gagal menyimpan perubahan. Silakan coba lagi.';
+
 export const useProfileStore = create<ProfileState>((set) => ({
-  drafts: {},
-  saveDraft: (accountKey, profile) => set((state) => ({
-    drafts: { ...state.drafts, [accountKey]: { ...profile } },
-  })),
-  clearDrafts: () => set({ drafts: {} }),
+  isSaving: false,
+  error: null,
+
+  saveProfile: async (data) => {
+    set({ isSaving: true, error: null });
+    try {
+      await updateProfil(data);
+      set({ isSaving: false });
+    } catch (error) {
+      set({ isSaving: false, error: errorMessage(error) });
+      throw error;
+    }
+  },
+
+  saveUsername: async (data) => {
+    set({ isSaving: true, error: null });
+    try {
+      await updateUsername(data);
+      set({ isSaving: false });
+    } catch (error) {
+      set({ isSaving: false, error: errorMessage(error) });
+      throw error;
+    }
+  },
+
+  savePassword: async (data) => {
+    set({ isSaving: true, error: null });
+    try {
+      await updatePassword(data);
+      set({ isSaving: false });
+    } catch (error) {
+      set({ isSaving: false, error: errorMessage(error) });
+      throw error;
+    }
+  },
+
+  clearError: () => set({ error: null }),
 }));
