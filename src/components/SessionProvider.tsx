@@ -30,7 +30,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     const timer = window.setInterval(revalidate, 60_000);
     const unsubscribe = useAuthStore.subscribe((state, previous) => {
       if (state.user?.id !== previous.user?.id) {
-        useProfileStore.getState().clearDrafts();
+        useProfileStore.getState().clearError();
         useAppStore.getState().closeMobileMenu();
         const notifications = useNotificationStore.getState();
         notifications.reset();

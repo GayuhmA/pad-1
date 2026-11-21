@@ -16,10 +16,15 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [status, setStatus] = useState<"idle" | "submitting" | "redirecting">("idle");
   const submitLocked = useRef(false);
-  const isBusy = status !== "idle";
+  const isSessionBusy = sessionStatus === "initializing"
+    || sessionStatus === "authenticated"
+    || sessionStatus === "logging-out";
+  const isBusy = status !== "idle" || isSessionBusy;
   const statusMessage = status === "redirecting"
     ? "Berhasil masuk. Mengalihkan…"
-    : status === "submitting" ? "Sedang masuk…" : "";
+    : status === "submitting" ? "Sedang masuk…"
+    : sessionStatus === "initializing" ? "Memeriksa sesi…"
+    : sessionStatus === "authenticated" ? "Sesi aktif. Mengalihkan…" : "";
 
   useEffect(() => {
     if (sessionStatus === "authenticated" && user) router.replace(getPostLoginPath(user.role));
@@ -46,7 +51,7 @@ export default function LoginPage() {
     router.replace(getPostLoginPath(useAuthStore.getState().user?.role));
   };
 
-  if (status === "idle" && sessionStatus !== "unauthenticated") {
+  if (status === "idle" && sessionStatus === "error") {
     return <SessionStatus />;
   }
 
@@ -151,7 +156,10 @@ export default function LoginPage() {
                     <path d="M12 3a9 9 0 0 1 9 9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
                   </svg>
                 )}
-                {status === "redirecting" ? "Mengalihkan…" : status === "submitting" ? "Sedang masuk…" : "Log In"}
+                {status === "redirecting" || sessionStatus === "authenticated" ? "Mengalihkan…"
+                  : status === "submitting" ? "Sedang masuk…"
+                  : sessionStatus === "initializing" ? "Memeriksa sesi…"
+                  : "Log In"}
               </Button>
             </div>
           </form>

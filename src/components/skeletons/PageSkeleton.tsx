@@ -1,4 +1,4 @@
-type PageSkeletonVariant = 'home' | 'lomba' | 'pendaftaran' | 'iuran' | 'profile' | 'generic';
+type PageSkeletonVariant = 'home' | 'lomba' | 'pendaftaran' | 'iuran' | 'profile' | 'management' | 'generic';
 
 interface PageSkeletonProps {
   variant?: PageSkeletonVariant;
@@ -292,7 +292,7 @@ function IuranSkeleton() {
 
 function GenericSkeleton() {
   return (
-    <div className="min-h-screen grow bg-linear-to-b from-primary-100 via-primary-100 to-primary-100/10">
+    <div className="min-h-screen grow bg-neutral-50">
       <div className="mx-auto w-full max-w-360 space-y-8 px-5 py-10 md:px-15">
         <div className="space-y-3">
           <SkeletonBlock className="h-14 w-72 max-w-full rounded-xl" />
@@ -307,17 +307,66 @@ function GenericSkeleton() {
   );
 }
 
+function ManagementSkeleton() {
+  return (
+    <div className="min-h-screen bg-[#FCF4F3] text-neutral-900">
+      <div className="min-h-screen lg:pl-69">
+        <aside aria-hidden="true" className="fixed inset-y-0 left-0 hidden w-69 flex-col border-r border-primary-100 bg-white lg:flex">
+          <div className="flex h-25 items-center gap-3 px-7">
+            <SkeletonBlock className="size-13.5 rounded-xl" />
+            <div className="space-y-2"><SkeletonBlock className="h-3 w-20 rounded" /><SkeletonBlock className="h-3 w-14 rounded" /></div>
+          </div>
+          <div className="flex-1 space-y-8 px-7 py-7">
+            {[4, 3].map((group, groupIndex) => (
+              <div key={groupIndex} className="space-y-3">
+                <SkeletonBlock className="mb-4 h-3 w-28 rounded" />
+                {Array.from({ length: group }, (_, item) => <SkeletonBlock key={item} className="h-12 w-full rounded-xl" />)}
+              </div>
+            ))}
+          </div>
+          <div className="border-t border-neutral-100 p-5"><SkeletonBlock className="h-14 w-full rounded-xl" /></div>
+        </aside>
+
+        <header aria-hidden="true" className="flex h-18 items-center justify-between border-b border-primary-100/80 bg-white px-4 sm:px-7 lg:h-20.5 lg:px-9">
+          <div className="flex items-center gap-3"><SkeletonBlock className="size-9 rounded-lg lg:hidden" /><div className="space-y-2"><SkeletonBlock className="h-4 w-28 rounded" /><SkeletonBlock className="h-3 w-24 rounded" /></div></div>
+          <div className="flex items-center gap-4"><SkeletonBlock className="hidden h-4 w-36 rounded md:block" /><SkeletonBlock className="h-10 w-28 rounded-xl" /></div>
+        </header>
+
+        <main aria-hidden="true" className="mx-auto w-full max-w-[1600px] space-y-7 px-4 py-7 sm:px-7 sm:py-9 lg:px-9 lg:py-10">
+          <section className="space-y-3"><SkeletonBlock className="h-4 w-40 rounded" /><SkeletonBlock className="h-9 w-80 max-w-full rounded-lg" /><SkeletonBlock className="h-4 w-96 max-w-full rounded" /></section>
+          <section className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-4">
+            {[1, 2, 3, 4].map((item) => <div key={item} className="space-y-5 rounded-2xl border border-primary-100/90 bg-white p-6"><SkeletonBlock className="h-4 w-28 rounded" /><SkeletonBlock className="h-8 w-20 rounded" /></div>)}
+          </section>
+          <section className="grid items-start gap-5 2xl:grid-cols-2">
+            {[1, 2].map((item) => <div key={item} className="space-y-5 rounded-2xl border border-primary-100/90 bg-white p-6"><SkeletonBlock className="h-6 w-48 rounded" /><SkeletonBlock className="h-48 w-full rounded-xl" /></div>)}
+          </section>
+          <SkeletonBlock className="h-48 rounded-2xl bg-white" />
+        </main>
+      </div>
+    </div>
+  );
+}
+
 function PageContent({ variant }: { variant: PageSkeletonVariant }) {
   if (variant === 'home') return <HomeSkeleton />;
   if (variant === 'lomba') return <LombaSkeleton />;
   if (variant === 'pendaftaran') return <PendaftaranSkeleton />;
   if (variant === 'iuran') return <IuranSkeleton />;
   if (variant === 'profile') return <ProfileSkeleton />;
+  if (variant === 'management') return <ManagementSkeleton />;
   return <GenericSkeleton />;
 }
 
 export function PageSkeleton({ variant = 'generic', includeShell = false }: PageSkeletonProps) {
   const content = <PageContent variant={variant} />;
+  if (variant === 'management') {
+    return (
+      <div role="status" aria-live="polite" className="min-h-screen">
+        <span className="sr-only">Memuat dashboard</span>
+        <div aria-hidden="true">{content}</div>
+      </div>
+    );
+  }
   if (!includeShell) {
     return (
       <div role="status" aria-live="polite">

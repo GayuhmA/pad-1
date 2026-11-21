@@ -9,7 +9,11 @@ export function SessionStatus() {
   const { status, error, isChecking, fetchUser, logout } = useAuthStore();
   const pathname = usePathname();
   if (status !== 'error') {
-    const variant = pathname === '/' ? 'home'
+    // While the session is being checked, or an unauthenticated user is being
+    // redirected to login, avoid showing warga-specific page content.
+    const variant = pathname.startsWith('/dashboard') ? 'management'
+      : status === 'initializing' || status === 'unauthenticated' ? 'generic'
+      : pathname === '/' ? 'home'
       : pathname.startsWith('/lomba') ? 'lomba'
       : pathname.startsWith('/profile') ? 'profile'
       : 'generic';
