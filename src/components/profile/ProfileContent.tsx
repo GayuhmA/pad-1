@@ -8,6 +8,9 @@ import { Button } from '@/components/Button';
 import { useResidentProfile } from '@/hooks/use-resident-profile';
 import { formatBirthDetails } from '@/lib/profile';
 import { useAuthStore } from '@/stores/auth-store';
+import { ProfileDialog } from '@/components/profile/ProfileDialog';
+import { EditProfileForm } from '@/components/profile/EditProfileForm';
+import { ManagePasswordForm } from '@/components/profile/ManagePasswordForm';
 
 function ProfileField({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -23,6 +26,8 @@ export function ProfileContent() {
   const { profile } = useResidentProfile();
   const logout = useAuthStore((state) => state.logout);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [showEditProfile, setShowEditProfile] = useState(false);
+  const [showManagePassword, setShowManagePassword] = useState(false);
   const submitLocked = useRef(false);
 
   async function handleLogout() {
@@ -53,7 +58,7 @@ export function ProfileContent() {
               <Badge color="secondary" className="min-w-24">{profile.role}</Badge>
             </div>
           </div>
-          <Button size="S" disabled className="min-h-11 shrink-0 self-start font-bold shadow-sm">Edit Profil</Button>
+          <Button size="S" onClick={() => setShowEditProfile(true)} className="min-h-11 shrink-0 self-start font-bold shadow-sm">Edit Profil</Button>
         </section>
 
         <div className="grid items-start gap-5 lg:grid-cols-[3fr_2fr]">
@@ -73,12 +78,32 @@ export function ProfileContent() {
               <h2 id="neighborhood-contacts-title" className="mb-5 text-center text-h7 font-bold text-primary-600">Kontak Ketua RT dan RW</h2>
               <p className="text-center text-body-2 text-neutral-500">Kontak pengurus belum tersedia.</p>
             </section>
-            <Button size="L" disabled aria-describedby="password-update-note" className="h-15! w-full text-h6! font-bold shadow-sm">Kelola Sandi</Button>
-            <p id="password-update-note" className="text-center text-body-3 text-neutral-500">Perubahan sandi belum tersedia.</p>
+            <Button size="L" onClick={() => setShowManagePassword(true)} aria-describedby="password-update-note" className="h-15! w-full text-h6! font-bold shadow-sm">Kelola Sandi</Button>
+            <p id="password-update-note" className="text-center text-body-3 text-neutral-500">Ubah username atau sandi akun Anda.</p>
             <Button variant="ghost" size="L" onClick={handleLogout} disabled={isLoggingOut} className="w-full text-h6! font-bold">{isLoggingOut ? 'Keluar…' : 'Log Out'}</Button>
           </div>
         </div>
       </div>
+
+      {showEditProfile && (
+        <ProfileDialog title="Edit Profil" onClose={() => setShowEditProfile(false)} variant="form">
+          <EditProfileForm
+            profile={profile}
+            onSave={() => setShowEditProfile(false)}
+            onCancel={() => setShowEditProfile(false)}
+          />
+        </ProfileDialog>
+      )}
+
+      {showManagePassword && (
+        <ProfileDialog title="Kelola Sandi" onClose={() => setShowManagePassword(false)} variant="form">
+          <ManagePasswordForm
+            username={profile.username}
+            onSave={() => setShowManagePassword(false)}
+            onCancel={() => setShowManagePassword(false)}
+          />
+        </ProfileDialog>
+      )}
     </div>
   );
 }

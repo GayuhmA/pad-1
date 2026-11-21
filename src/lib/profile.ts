@@ -10,11 +10,8 @@ export function getResidentProfile(user: User | null): ResidentProfile | null {
     birthPlace: user.tempat_lahir ?? '',
     birthDate: user.tanggal_lahir ?? '',
     address: user.alamat ?? '',
-    locality: [
-      user.nomor_rt ? `RT ${user.nomor_rt}` : '',
-      user.nomor_rw ? `RW ${user.nomor_rw}` : '',
-    ].filter(Boolean).join(' / '),
     phone: user.phone ?? '',
+    // locality (RT/RW) is intentionally excluded: it cannot be changed via the profile endpoint.
   };
 }
 

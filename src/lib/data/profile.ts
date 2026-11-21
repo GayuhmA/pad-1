@@ -5,7 +5,6 @@ export interface ResidentProfile {
   birthPlace: string;
   birthDate: string;
   address: string;
-  locality: string;
   phone: string;
 }
 

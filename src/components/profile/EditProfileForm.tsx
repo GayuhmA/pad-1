@@ -5,10 +5,12 @@ import { Button } from '@/components/Button';
 import type { ResidentProfile } from '@/lib/data/profile';
 import { formatBirthDetails } from '@/lib/profile';
 import { EditableField, EditIcon, inputClassName } from '@/components/profile/ProfileFormField';
+import { useProfileStore } from '@/stores/profile-store';
+import { useAuthStore } from '@/stores/auth-store';
 
 interface EditProfileFormProps {
   profile: ResidentProfile;
-  onSave: (profile: ResidentProfile) => void;
+  onSave: () => void;
   onCancel: () => void;
 }
 
@@ -16,26 +18,34 @@ export function EditProfileForm({ profile, onSave, onCancel }: EditProfileFormPr
   const [draft, setDraft] = useState(profile);
   const [error, setError] = useState('');
   const [editingBirth, setEditingBirth] = useState(false);
+  const { isSaving, saveProfile } = useProfileStore();
+  const fetchUser = useAuthStore((state) => state.fetchUser);
 
   function updateField(name: keyof ResidentProfile, value: string) {
     setDraft((current) => ({ ...current, [name]: value }));
     setError('');
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!draft.name.trim()) {
       setError('Nama lengkap wajib diisi.');
       return;
     }
-    onSave({
-      ...draft,
-      name: draft.name.trim(),
-      birthPlace: draft.birthPlace.trim(),
-      address: draft.address.trim(),
-      locality: draft.locality.trim(),
-      phone: draft.phone.trim(),
-    });
+    try {
+      await saveProfile({
+        nama: draft.name.trim(),
+        tempat_lahir: draft.birthPlace.trim(),
+        tanggal_lahir: draft.birthDate,
+        alamat: draft.address.trim(),
+        no_hp: draft.phone.trim(),
+      });
+      await fetchUser(true);
+      onSave();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Gagal menyimpan. Silakan coba lagi.';
+      setError(message);
+    }
   }
 
   return (
@@ -63,8 +73,6 @@ export function EditProfileForm({ profile, onSave, onCancel }: EditProfileFormPr
 
       <EditableField id="profile-address" label="Alamat Sesuai KTP">
         <input id="profile-address" name="address" autoComplete="address-line1" maxLength={200} placeholder="Alamat" value={draft.address} onChange={(event) => updateField('address', event.target.value)} className={inputClassName} />
-        <label htmlFor="profile-locality" className="sr-only">Kelurahan, Kecamatan, dan Kota</label>
-        <input id="profile-locality" name="locality" autoComplete="address-line2" maxLength={200} placeholder="Kelurahan, Kecamatan, dan Kota" value={draft.locality} onChange={(event) => updateField('locality', event.target.value)} className={`${inputClassName} font-normal!`} />
       </EditableField>
 
       <EditableField id="profile-phone" label="Nomor WhatsApp / Telepon">
@@ -73,8 +81,8 @@ export function EditProfileForm({ profile, onSave, onCancel }: EditProfileFormPr
 
       {error && <p role="alert" className="text-body-3 text-error-100">{error}</p>}
       <div className="flex flex-wrap justify-end gap-2 pt-0.5">
-        <Button size="S" variant="ghost" color="neutral" onClick={onCancel} className="font-semibold text-neutral-900! focus-visible:outline-2 focus-visible:outline-primary-600">Batalkan</Button>
-        <Button size="S" type="submit" className="px-5! font-bold shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600">Simpan Perubahan</Button>
+        <Button size="S" variant="ghost" color="neutral" onClick={onCancel} disabled={isSaving} className="font-semibold text-neutral-900! focus-visible:outline-2 focus-visible:outline-primary-600">Batalkan</Button>
+        <Button size="S" type="submit" disabled={isSaving} className="px-5! font-bold shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600">{isSaving ? 'Menyimpan…' : 'Simpan Perubahan'}</Button>
       </div>
     </form>
   );
