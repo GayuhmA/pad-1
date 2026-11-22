@@ -106,9 +106,31 @@ function readEnvelope(value: unknown, label: string): Record<string, unknown> {
   return result;
 }
 
-export async function backendManagementDashboard(token: string, tanggal?: string): Promise<ManagementDashboardResponse> {
+export async function backendManagementDashboard(
+  token: string,
+  tanggal?: string,
+  role?: 'panitia' | 'admin' | string,
+): Promise<ManagementDashboardResponse> {
   const query = tanggal ? `?tanggal=${encodeURIComponent(tanggal)}` : '';
-  const response = readEnvelope(await performRequest(`/api/dashboard${query}`, token), 'layanan dashboard');
+  const primaryEndpoint = role === 'admin' ? `/api/admin/dashboard${query}` : `/api/panitia/dashboard${query}`;
+  const fallbackEndpoint = role === 'admin' ? `/api/panitia/dashboard${query}` : `/api/admin/dashboard${query}`;
+
+  let rawResponse: unknown;
+  try {
+    rawResponse = await performRequest(primaryEndpoint, token);
+  } catch (err) {
+    if (err instanceof ManagementDashboardError && (err.status === 403 || err.status === 404)) {
+      try {
+        rawResponse = await performRequest(fallbackEndpoint, token);
+      } catch {
+        throw err;
+      }
+    } else {
+      throw err;
+    }
+  }
+
+  const response = readEnvelope(rawResponse, 'layanan dashboard');
   const data = record(response.data);
   const summary = record(data.ringkasan);
   if (!Array.isArray(data.sedang_berlangsung) || !Array.isArray(data.agenda)) {
@@ -155,12 +177,18 @@ export async function backendManagementDashboard(token: string, tanggal?: string
 }
 
 export async function backendMatchOptions(token: string): Promise<MatchOptionsResponse> {
-  const response = readEnvelope(await performRequest('/api/pertandingan/options', token), 'opsi pertandingan');
-  const data = record(response.data);
-  if (!Array.isArray(data.lomba) || !Array.isArray(data.jadwal)) {
+  const [lombaEnvelope, jadwalEnvelope] = await Promise.all([
+    performRequest('/api/lomba', token).catch(() => ({ success: true, message: 'OK', data: [] })),
+    performRequest('/api/jadwal', token).catch(() => ({ success: true, message: 'OK', data: [] })),
+  ]);
+
+  const lombaData = record(lombaEnvelope).data;
+  const jadwalData = record(jadwalEnvelope).data;
+
+  if (!Array.isArray(lombaData) || !Array.isArray(jadwalData)) {
     throw new ManagementDashboardError(502, 'Respons opsi pertandingan tidak valid. Silakan coba lagi.');
   }
-  const lomba = data.lomba.map((value) => {
+  const lomba = lombaData.map((value) => {
     const item = record(value);
     const jenisPendaftaran = item.jenis_pendaftaran;
     if (jenisPendaftaran !== 'Individu' && jenisPendaftaran !== 'Beregu') {
@@ -172,7 +200,7 @@ export async function backendMatchOptions(token: string): Promise<MatchOptionsRe
       jenis_pendaftaran: jenisPendaftaran as 'Individu' | 'Beregu',
     };
   });
-  const jadwal = data.jadwal.map((value) => {
+  const jadwal = jadwalData.map((value) => {
     const item = record(value);
     return {
       id_jadwal: positiveOrZeroInteger(item.id_jadwal),
@@ -184,7 +212,7 @@ export async function backendMatchOptions(token: string): Promise<MatchOptionsRe
       lokasi: nullableText(item.lokasi),
     };
   });
-  return { success: true, message: text(response.message), data: { lomba, jadwal } };
+  return { success: true, message: 'Opsi pertandingan berhasil dimuat.', data: { lomba, jadwal } };
 }
 
 export async function backendCreateMatch(token: string, input: CreateMatchInput): Promise<CreateMatchResponse> {

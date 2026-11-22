@@ -6,8 +6,11 @@ import type {
   MatchOptionsResponse,
 } from '@/types/dashboard';
 
-export function getManagementDashboard(tanggal?: string, signal?: AbortSignal) {
-  const query = tanggal ? `?tanggal=${encodeURIComponent(tanggal)}` : '';
+export function getManagementDashboard(tanggal?: string, role?: string, signal?: AbortSignal) {
+  const params = new URLSearchParams();
+  if (tanggal) params.set('tanggal', tanggal);
+  if (role) params.set('role', role);
+  const query = params.toString() ? `?${params.toString()}` : '';
   return apiRequest<ManagementDashboardResponse>(`/api/dashboard${query}`, { signal });
 }
 

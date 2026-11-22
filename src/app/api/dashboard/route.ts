@@ -19,7 +19,9 @@ export async function GET(request: NextRequest) {
     if (tanggal !== null && !validDate(tanggal)) {
       throw new ManagementDashboardError(422, 'Tanggal agenda harus menggunakan format YYYY-MM-DD.');
     }
-    return sessionResponse(await backendManagementDashboard(token, tanggal ?? undefined));
+    const roleParam = request.nextUrl.searchParams.get('role');
+    const role = roleParam === 'admin' || roleParam === 'panitia' ? roleParam : undefined;
+    return sessionResponse(await backendManagementDashboard(token, tanggal ?? undefined, role));
   } catch (error) {
     if (error instanceof ManagementDashboardError) {
       return sessionResponse({ message: error.message, ...(error.errors ? { errors: error.errors } : {}) }, error.status);

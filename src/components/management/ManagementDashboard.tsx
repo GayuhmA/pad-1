@@ -340,7 +340,20 @@ function ManagementContent({ data, tanggal, loading, error, onRetry, onDateChang
   onDateChange: (value: string) => void;
   onAddMatch: () => void;
 }) {
-  if (loading && !data) return <div role="status" className="rounded-2xl border border-primary-100 bg-white px-5 py-16 text-center text-sm text-neutral-500">Memuat dashboard…</div>;
+  if (loading && !data) return (
+    <div role="status" aria-live="polite" className="space-y-6">
+      <span className="sr-only">Memuat data dashboard…</span>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-4">
+        {[1, 2, 3, 4].map((item) => (
+          <div key={item} className="h-28 rounded-2xl border border-primary-100/90 bg-white p-5 animate-pulse" />
+        ))}
+      </div>
+      <div className="mt-6 grid items-start gap-5 2xl:grid-cols-[1fr_1.02fr]">
+        <div className="h-96 rounded-2xl border border-primary-100/90 bg-white p-5 animate-pulse" />
+        <div className="h-96 rounded-2xl border border-primary-100/90 bg-white p-5 animate-pulse" />
+      </div>
+    </div>
+  );
   if (error && !data) return <div className="rounded-2xl border border-error-100/30 bg-white px-5 py-12 text-center"><p role="alert" className="text-sm text-error-100">{error}</p><button type="button" onClick={onRetry} className="mt-4 rounded-xl bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white">Coba lagi</button></div>;
   if (!data) return null;
   return <>
@@ -419,7 +432,7 @@ export function ManagementDashboard({ role, userName }: { role: Role; userName: 
 
   useEffect(() => {
     const controller = new AbortController();
-    getManagementDashboard(tanggal, controller.signal).then((response) => {
+    getManagementDashboard(tanggal, role, controller.signal).then((response) => {
       setDashboard(response.data);
       setTanggal(response.data.tanggal_filter);
     }).catch((error: unknown) => {
@@ -428,7 +441,7 @@ export function ManagementDashboard({ role, userName }: { role: Role; userName: 
       if (!controller.signal.aborted) setLoading(false);
     });
     return () => controller.abort();
-  }, [tanggal, refreshKey]);
+  }, [tanggal, role, refreshKey]);
 
   const handleDateChange = useCallback((value: string) => {
     setLoading(true);

@@ -1,8 +1,9 @@
 'use client';
 
-import { Fragment, useCallback, useMemo, useState, type FormEvent } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Icon, ManagementLayout } from '@/components/management/ManagementDashboard';
 import { Modal } from '@/components/Modal';
+import { getManagementLomba } from '@/lib/api/management-lomba';
 
 type CompetitionStatus = 'Berlangsung' | 'Mendatang' | 'Selesai';
 type CompetitionKind = 'Regu' | 'Individu';
@@ -95,7 +96,7 @@ function emptyForm(): CompetitionForm {
   };
 }
 
-const PAGE_SIZE = 3;
+const PAGE_SIZE = 5;
 
 function formatDate(date: string) {
   return new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'long', timeZone: 'UTC' }).format(new Date(`${date}T00:00:00Z`));
@@ -157,16 +158,44 @@ function CompetitionFormModal({
 }
 
 export function CompetitionManagement({ role, userName }: { role: 'admin' | 'panitia'; userName: string }) {
-  const [competitions, setCompetitions] = useState(initialCompetitions);
-  const [archived, setArchived] = useState(initialArchive);
+  const [competitions, setCompetitions] = useState<Competition[]>(initialCompetitions);
+  const [archived, setArchived] = useState<ArchivedCompetition[]>(initialArchive);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [archiveQuery, setArchiveQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'Semua Status' | CompetitionStatus>('Semua Status');
   const [page, setPage] = useState(1);
-  const [expandedId, setExpandedId] = useState<string | null>('tarik-tambang');
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [dialog, setDialog] = useState<{ mode: 'create' } | { mode: 'edit'; id: string } | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const closeDialog = useCallback(() => { setDialog(null); setFormError(null); }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoading(true);
+    setLoadError(null);
+    getManagementLomba(role, controller.signal)
+      .then((response) => {
+        if (response.data.competitions && response.data.competitions.length > 0) {
+          setCompetitions(response.data.competitions);
+        }
+        if (response.data.archived && response.data.archived.length > 0) {
+          setArchived(response.data.archived);
+        }
+      })
+      .catch((err: unknown) => {
+        if (!controller.signal.aborted) {
+          setLoadError(err instanceof Error ? err.message : 'Daftar lomba gagal dimuat.');
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setLoading(false);
+        }
+      });
+    return () => controller.abort();
+  }, [role]);
 
   const filteredCompetitions = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase('id-ID');
@@ -241,6 +270,11 @@ export function CompetitionManagement({ role, userName }: { role: 'admin' | 'pan
   ];
 
   return <ManagementLayout role={role} userName={userName} title="Kelola Lomba" activeItem="competitions">
+    {loadError && (
+      <p role="alert" className="mb-5 rounded-xl bg-error-10 px-4 py-3 text-sm text-error-100">
+        Pembaruan data lomba gagal: {loadError}
+      </p>
+    )}
     <section className="mb-7 flex flex-wrap items-center justify-between gap-4 sm:mb-8">
       <div><p className="mb-1 text-sm font-medium text-primary-600">Ruang Panitia</p><h1 className="text-[26px] font-semibold tracking-tight text-neutral-900 sm:text-[32px]">Kelola Lomba</h1><p className="mt-2 text-sm text-neutral-500">Atur lomba, kuota peserta, jadwal, dan hasil pertandingan.</p></div>
       <button type="button" onClick={() => { setFormError(null); setDialog({ mode: 'create' }); }} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-primary-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-primary-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600 sm:px-5"><span className="text-xl leading-none">+</span>Tambah Lomba</button>
