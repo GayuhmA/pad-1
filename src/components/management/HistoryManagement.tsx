@@ -1,187 +1,947 @@
 'use client';
 
-import { useMemo, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Icon, ManagementLayout } from '@/components/management/ManagementDashboard';
 import { Modal } from '@/components/Modal';
-
-interface HistoryEvent {
-  id: string;
-  label: string;
-  dateRange: string;
-  title: string;
-  description: string;
-}
+import {
+  addPemenangLomba,
+  deletePemenang,
+  getDaftarHistori,
+  getDetailHistori,
+  getPesertaLomba,
+  updateHistoriPeriode,
+  updatePemenang,
+} from '@/lib/api/histori';
+import type {
+  DetailHistoriPeriode,
+  LombaHistoriItem,
+  PeriodeHistoriItem,
+  PesertaLombaOption,
+} from '@/types/histori';
 
 interface WinnerEntry {
   id: string;
+  idPemenang?: number;
+  idLomba: number;
   competition: string;
   category: string;
   participants: string;
   location: string;
   winner: string;
+  peringkat: number;
+  keterangan?: string | null;
+  tipePemenang: string;
+  idPendaftaran?: number | null;
 }
 
-const events: HistoryEvent[] = [
+const fallbackPeriods: PeriodeHistoriItem[] = [
   {
-    id: '2025',
-    label: 'Perayaan 2025',
-    dateRange: '14 – 17 Agustus 2025',
-    title: 'Nusantara Bersuka, Indonesia Berjaya',
-    description: 'Perayaan Hari Ulang Tahun ke-80 Kemerdekaan Republik Indonesia telah dilaksanakan selama empat hari dengan penuh semangat dan antusiasme dari seluruh warga. Berbagai rangkaian kegiatan turut memeriahkan perayaan tahun ini, mulai dari berbagai perlombaan antarwarga hingga Malam Tirakatan yang dilaksanakan sebagai bentuk rasa syukur dan penghormatan terhadap perjuangan para pahlawan. Seluruh kegiatan berlangsung dengan meriah dan penuh kebersamaan, sekaligus menjadi kesempatan bagi warga untuk saling mengenal, mempererat silaturahmi, serta membangun semangat gotong royong di lingkungan bersama.',
-  },
-  {
-    id: '2024',
-    label: 'Perayaan 2024',
-    dateRange: '15 – 18 Agustus 2024',
-    title: 'Semangat Merdeka, Warga Berjaya',
-    description: 'Warga merayakan Hari Ulang Tahun Kemerdekaan Republik Indonesia dengan rangkaian lomba, kerja bakti, dan malam kebersamaan. Terima kasih kepada seluruh warga dan panitia yang telah berpartisipasi menjaga suasana tetap hangat, tertib, dan penuh semangat gotong royong.',
+    id_periode: 1,
+    tahun: '2026',
+    judul: 'Semarak HUT RI ke-81',
+    nama_kegiatan: 'Semarak HUT RI ke-81',
+    deskripsi: 'Perayaan Hari Ulang Tahun ke-81 Kemerdekaan Republik Indonesia telah dilaksanakan selama empat hari dengan penuh semangat dan antusiasme dari seluruh warga. Berbagai rangkaian kegiatan turut memeriahkan perayaan tahun ini, mulai dari berbagai perlombaan antarwarga hingga Malam Tirakatan yang dilaksanakan sebagai bentuk rasa syukur dan penghormatan terhadap perjuangan para pahlawan. Seluruh kegiatan berlangsung dengan meriah dan penuh kebersamaan, sekaligus menjadi kesempatan bagi warga untuk saling mengenal, mempererat silaturahmi, serta membangun semangat gotong royong di lingkungan bersama.',
+    tanggal_mulai: '2026-08-14',
+    tanggal_selesai: '2026-08-17',
+    status: 'Selesai',
+    logo: null,
+    jumlah_lomba: 8,
   },
 ];
 
-const initialWinners: Record<string, WinnerEntry[]> = {
-  '2025': [
-    { id: 'w-1', competition: 'Balap Karung', category: 'Umum', participants: '12 Peserta', location: 'Halaman Balai Desa', winner: 'Tim Merah RW 04' },
-    { id: 'w-2', competition: 'Estafet Kelereng', category: 'Anak-anak', participants: '10 Peserta', location: 'Aula Balai Desa', winner: 'Nadia Putri' },
-    { id: 'w-3', competition: 'Bola Beracun', category: 'Umum', participants: '8 Regu', location: 'Lapangan Timur', winner: 'Regu Garuda' },
-    { id: 'w-4', competition: 'Panjat Pinang', category: 'Dewasa', participants: '8 Regu', location: 'Lapangan Utama', winner: 'Regu Nusantara' },
-    { id: 'w-5', competition: 'Menyanyi', category: 'Anak-anak', participants: '10 Peserta', location: 'Aula Balai Desa', winner: 'Rafi Ahmad' },
-    { id: 'w-6', competition: 'Estafet Air', category: 'Umum', participants: '10 Regu', location: 'Lapangan Selatan', winner: 'Regu Kompak' },
-    { id: 'w-7', competition: 'Estafet Pingpong Air', category: 'Anak-anak', participants: '15 Peserta', location: 'Halaman Balai Desa', winner: 'Dimas Pratama' },
-    { id: 'w-8', competition: 'Futsal Sarung', category: 'Dewasa', participants: '10 Regu', location: 'Lapangan Utama', winner: 'Tim Garuda' },
-  ],
-  '2024': [
-    { id: 'w24-1', competition: 'Balap Karung', category: 'Umum', participants: '10 Peserta', location: 'Lapangan Utama', winner: 'Budi Santoso' },
-    { id: 'w24-2', competition: 'Makan Kerupuk', category: 'Anak-anak', participants: '12 Peserta', location: 'Halaman Balai Desa', winner: 'Alya Putri' },
-    { id: 'w24-3', competition: 'Tarik Tambang', category: 'Dewasa', participants: '6 Regu', location: 'Lapangan Timur', winner: 'Regu Merdeka' },
-  ],
-};
-const emptyWinnerEntries: WinnerEntry[] = [];
-
-function makeId() {
-  return typeof crypto !== 'undefined' && 'randomUUID' in crypto
-    ? crypto.randomUUID()
-    : `winner-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+function formatDateRange(start: string | null, end: string | null, fallbackYear: string): string {
+  if (!start && !end) return `Agustus ${fallbackYear}`;
+  try {
+    if (start && end) {
+      const s = new Date(start.includes('T') ? start : `${start}T00:00:00Z`);
+      const e = new Date(end.includes('T') ? end : `${end}T00:00:00Z`);
+      const dayFormat = new Intl.DateTimeFormat('id-ID', { day: 'numeric', timeZone: 'UTC' });
+      const fullFormat = new Intl.DateTimeFormat('id-ID', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+        timeZone: 'UTC',
+      });
+      return `${dayFormat.format(s)} – ${fullFormat.format(e)}`;
+    }
+    if (start) {
+      return new Intl.DateTimeFormat('id-ID', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+        timeZone: 'UTC',
+      }).format(new Date(start.includes('T') ? start : `${start}T00:00:00Z`));
+    }
+  } catch {
+    // fallback to year
+  }
+  return `Agustus ${fallbackYear}`;
 }
 
-function WinnerForm({ initial, onClose, onSave }: { initial: WinnerEntry | null; onClose: () => void; onSave: (entry: WinnerEntry) => void }) {
-  const [competition, setCompetition] = useState(initial?.competition ?? '');
-  const [category, setCategory] = useState(initial?.category ?? 'Umum');
-  const [participants, setParticipants] = useState(initial?.participants ?? '');
-  const [location, setLocation] = useState(initial?.location ?? '');
-  const [winner, setWinner] = useState(initial?.winner ?? '');
+const inputClass =
+  'h-11 w-full rounded-xl border border-neutral-200 px-3.5 text-sm text-neutral-800 placeholder:text-neutral-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600 disabled:bg-neutral-100 disabled:text-neutral-500';
 
-  function submit(event: FormEvent<HTMLFormElement>) {
+function WinnerForm({
+  initial,
+  lombaList,
+  idPeriode,
+  role,
+  onClose,
+  onSuccess,
+}: {
+  initial: WinnerEntry | null;
+  lombaList: LombaHistoriItem[];
+  idPeriode: number;
+  role?: 'admin' | 'panitia';
+  onClose: () => void;
+  onSuccess: (message: string) => void;
+}) {
+  const [selectedLombaId, setSelectedLombaId] = useState<string>(
+    initial ? String(initial.idLomba) : lombaList.length > 0 ? String(lombaList[0].id_lomba) : '',
+  );
+  const [peringkat, setPeringkat] = useState<number>(initial?.peringkat ?? 1);
+  const [keterangan, setKeterangan] = useState<string>(initial?.keterangan ?? '');
+  const [participants, setParticipants] = useState<PesertaLombaOption[]>([]);
+  const [selectedPesertaId, setSelectedPesertaId] = useState<string>(
+    initial?.idPendaftaran ? String(initial.idPendaftaran) : '',
+  );
+  const [customWinnerName, setCustomWinnerName] = useState<string>(initial?.winner ?? '');
+  const [isLoadingPeserta, setIsLoadingPeserta] = useState<boolean>(false);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [formError, setFormError] = useState<string>('');
+
+  const currentLomba = useMemo(() => {
+    return lombaList.find((l) => String(l.id_lomba) === selectedLombaId) ?? lombaList[0] ?? null;
+  }, [lombaList, selectedLombaId]);
+
+  useEffect(() => {
+    if (initial) return; // In edit mode, winner identity is fixed
+    if (!selectedLombaId) return;
+
+    let active = true;
+    setIsLoadingPeserta(true);
+    setFormError('');
+
+    getPesertaLomba(Number(selectedLombaId), role)
+      .then((res) => {
+        if (!active) return;
+        setParticipants(res.data);
+        if (res.data.length > 0) {
+          setSelectedPesertaId(String(res.data[0].id_pendaftaran));
+          setCustomWinnerName(res.data[0].nama_tim || res.data[0].nama);
+        } else {
+          setSelectedPesertaId('');
+          setCustomWinnerName('');
+        }
+      })
+      .catch(() => {
+        if (!active) return;
+        setParticipants([]);
+        setSelectedPesertaId('');
+      })
+      .finally(() => {
+        if (active) setIsLoadingPeserta(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [selectedLombaId, initial]);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    onSave({ id: initial?.id ?? makeId(), competition: competition.trim(), category, participants: participants.trim(), location: location.trim(), winner: winner.trim() });
+    setFormError('');
+
+    if (initial) {
+      if (!initial.idPemenang) {
+        setFormError('ID pemenang tidak ditemukan.');
+        return;
+      }
+      setIsSubmitting(true);
+      try {
+        await updatePemenang(initial.idPemenang, {
+          peringkat: Number(peringkat),
+          keterangan: keterangan.trim() || null,
+        });
+        onSuccess(`Rekap pemenang ${initial.competition} berhasil diperbarui.`);
+      } catch (err) {
+        setFormError(err instanceof Error ? err.message : 'Gagal memperbarui pemenang.');
+      } finally {
+        setIsSubmitting(false);
+      }
+      return;
+    }
+
+    if (!selectedLombaId) {
+      setFormError('Silakan pilih cabang perlombaan.');
+      return;
+    }
+
+    const targetPesertaId = selectedPesertaId ? Number(selectedPesertaId) : null;
+    const finalWinnerName = customWinnerName.trim();
+
+    if (!targetPesertaId && !finalWinnerName) {
+      setFormError('Silakan pilih peserta terdaftar atau isi nama pemenang.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await addPemenangLomba(idPeriode, Number(selectedLombaId), {
+        tipe_pemenang: currentLomba?.jenis_pendaftaran || 'Individu',
+        peringkat: Number(peringkat),
+        id_pendaftaran: targetPesertaId,
+        nama_pemenang: finalWinnerName || undefined,
+        keterangan: keterangan.trim() || null,
+      });
+      onSuccess(`Pemenang ${currentLomba?.nama_lomba || ''} berhasil ditambahkan.`);
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Gagal menambahkan pemenang.');
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
-  const inputClass = 'h-11 w-full rounded-xl border border-neutral-200 px-3.5 text-sm text-neutral-800 placeholder:text-neutral-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600';
-  return <Modal isOpen onClose={onClose} ariaLabel={initial ? 'Edit pemenang' : 'Input pemenang'}>
-    <form onSubmit={submit}>
-      <div className="border-b border-neutral-100 px-5 py-5 sm:px-7"><h2 className="text-xl font-semibold text-neutral-900">{initial ? 'Edit Pemenang' : 'Input Pemenang'}</h2><p className="mt-1 text-sm text-neutral-500">Lengkapi rekap pemenang untuk perayaan ini.</p></div>
-      <div className="grid gap-4 px-5 py-6 sm:grid-cols-2 sm:px-7">
-        <label className="space-y-1.5 sm:col-span-2"><span className="text-sm font-semibold text-neutral-700">Cabang perlombaan</span><input required maxLength={100} autoFocus value={competition} onChange={(event) => setCompetition(event.target.value)} placeholder="Nama lomba" className={inputClass} /></label>
-        <label className="space-y-1.5"><span className="text-sm font-semibold text-neutral-700">Kategori</span><select value={category} onChange={(event) => setCategory(event.target.value)} className={inputClass}><option>Umum</option><option>Anak-anak</option><option>Dewasa</option></select></label>
-        <label className="space-y-1.5"><span className="text-sm font-semibold text-neutral-700">Jumlah peserta</span><input required maxLength={40} value={participants} onChange={(event) => setParticipants(event.target.value)} placeholder="Contoh: 12 Peserta" className={inputClass} /></label>
-        <label className="space-y-1.5"><span className="text-sm font-semibold text-neutral-700">Lokasi pelaksanaan</span><input required maxLength={120} value={location} onChange={(event) => setLocation(event.target.value)} placeholder="Lokasi lomba" className={inputClass} /></label>
-        <label className="space-y-1.5"><span className="text-sm font-semibold text-neutral-700">Pemenang</span><input required maxLength={120} value={winner} onChange={(event) => setWinner(event.target.value)} placeholder="Nama pemenang atau regu" className={inputClass} /></label>
+  return (
+    <Modal isOpen onClose={onClose} ariaLabel={initial ? 'Edit pemenang' : 'Input pemenang'}>
+      <form onSubmit={submit}>
+        <div className="border-b border-neutral-100 px-5 py-5 sm:px-7">
+          <h2 className="text-xl font-semibold text-neutral-900">
+            {initial ? 'Edit Pemenang' : 'Input Pemenang'}
+          </h2>
+          <p className="mt-1 text-sm text-neutral-500">
+            {initial
+              ? 'Perbarui peringkat atau keterangan rekap pemenang.'
+              : 'Lengkapi rekap pemenang untuk perayaan ini.'}
+          </p>
+        </div>
+
+        {formError && (
+          <div className="mx-5 mt-4 rounded-xl border border-error-100 bg-error-10 px-4 py-3 text-sm font-medium text-error-100 sm:mx-7">
+            {formError}
+          </div>
+        )}
+
+        <div className="grid gap-4 px-5 py-6 sm:grid-cols-2 sm:px-7">
+          <label className="space-y-1.5 sm:col-span-2">
+            <span className="text-sm font-semibold text-neutral-700">Cabang perlombaan</span>
+            {initial ? (
+              <input value={initial.competition} disabled className={inputClass} />
+            ) : (
+              <select
+                required
+                value={selectedLombaId}
+                onChange={(e) => setSelectedLombaId(e.target.value)}
+                className={inputClass}
+              >
+                {lombaList.length === 0 && <option value="">Tidak ada perlombaan tersedia</option>}
+                {lombaList.map((item) => (
+                  <option key={item.id_lomba} value={item.id_lomba}>
+                    {item.nama_lomba} ({item.kategori} - {item.jenis_pendaftaran})
+                  </option>
+                ))}
+              </select>
+            )}
+          </label>
+
+          <label className="space-y-1.5">
+            <span className="text-sm font-semibold text-neutral-700">Kategori</span>
+            <input
+              value={initial ? initial.category : currentLomba?.kategori ?? 'Umum'}
+              disabled
+              className={inputClass}
+            />
+          </label>
+
+          <label className="space-y-1.5">
+            <span className="text-sm font-semibold text-neutral-700">Peringkat Juara</span>
+            <select
+              value={peringkat}
+              onChange={(e) => setPeringkat(Number(e.target.value))}
+              className={inputClass}
+            >
+              <option value={1}>Juara 1</option>
+              <option value={2}>Juara 2</option>
+              <option value={3}>Juara 3</option>
+              <option value={4}>Juara Harapan 1</option>
+              <option value={5}>Juara Harapan 2</option>
+            </select>
+          </label>
+
+          <label className="space-y-1.5 sm:col-span-2">
+            <span className="text-sm font-semibold text-neutral-700">
+              Pemenang {isLoadingPeserta ? '(Memuat peserta...)' : ''}
+            </span>
+            {initial ? (
+              <input value={initial.winner} disabled className={inputClass} />
+            ) : participants.length > 0 ? (
+              <select
+                required
+                value={selectedPesertaId}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  setSelectedPesertaId(id);
+                  const p = participants.find((item) => String(item.id_pendaftaran) === id);
+                  if (p) setCustomWinnerName(p.nama_tim || p.nama);
+                }}
+                className={inputClass}
+              >
+                {participants.map((p) => (
+                  <option key={p.id_pendaftaran} value={p.id_pendaftaran}>
+                    {p.nama_tim ? `${p.nama_tim} (${p.nama})` : p.nama}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                required
+                maxLength={120}
+                value={customWinnerName}
+                onChange={(e) => setCustomWinnerName(e.target.value)}
+                placeholder="Nama pemenang atau regu"
+                className={inputClass}
+              />
+            )}
+            {!initial && participants.length === 0 && !isLoadingPeserta && (
+              <p className="text-xs text-neutral-400">
+                Belum ada pendaftaran yang disetujui pada lomba ini. Nama pemenang dapat diisi manual.
+              </p>
+            )}
+          </label>
+
+          <label className="space-y-1.5 sm:col-span-2">
+            <span className="text-sm font-semibold text-neutral-700">Keterangan / Hadiah (Opsional)</span>
+            <input
+              maxLength={120}
+              value={keterangan}
+              onChange={(e) => setKeterangan(e.target.value)}
+              placeholder="Contoh: Piala Bergilir + Hadiah Pembinaan"
+              className={inputClass}
+            />
+          </label>
+        </div>
+
+        <div className="flex flex-col-reverse gap-2 border-t border-neutral-100 px-5 py-4 sm:flex-row sm:justify-end sm:px-7">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isSubmitting}
+            className="min-h-11 rounded-xl border border-neutral-200 px-4 text-sm font-semibold text-neutral-600 hover:bg-neutral-50 disabled:opacity-50"
+          >
+            Batal
+          </button>
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="min-h-11 rounded-xl bg-primary-600 px-5 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-50"
+          >
+            {isSubmitting ? 'Menyimpan...' : 'Simpan'}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function DeleteConfirmation({
+  entry,
+  onClose,
+  onConfirm,
+  isDeleting,
+}: {
+  entry: WinnerEntry;
+  onClose: () => void;
+  onConfirm: () => void;
+  isDeleting: boolean;
+}) {
+  return (
+    <Modal isOpen onClose={onClose} ariaLabel="Hapus rekap pemenang">
+      <div className="p-6 sm:p-7">
+        <span className="flex size-11 items-center justify-center rounded-xl bg-error-10 text-error-100">
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="size-5"
+          >
+            <path d="M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m4 4v6m6-6v6" />
+          </svg>
+        </span>
+        <h2 className="mt-4 text-lg font-semibold text-neutral-900">Hapus rekap pemenang?</h2>
+        <p className="mt-2 text-sm leading-6 text-neutral-500">
+          Data <span className="font-semibold text-neutral-700">{entry.competition}</span> - Juara{' '}
+          {entry.peringkat} (<span className="font-medium text-neutral-700">{entry.winner}</span>)
+          akan dihapus dari tampilan histori ini.
+        </p>
+        <div className="mt-6 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isDeleting}
+            className="min-h-10 rounded-xl border border-neutral-200 px-4 text-sm font-semibold text-neutral-600 hover:bg-neutral-50 disabled:opacity-50"
+          >
+            Batal
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={isDeleting}
+            className="min-h-10 rounded-xl bg-error-100 px-4 text-sm font-semibold text-white hover:bg-error-200 disabled:opacity-50"
+          >
+            {isDeleting ? 'Menghapus...' : 'Hapus'}
+          </button>
+        </div>
       </div>
-      <div className="flex flex-col-reverse gap-2 border-t border-neutral-100 px-5 py-4 sm:flex-row sm:justify-end sm:px-7"><button type="button" onClick={onClose} className="min-h-11 rounded-xl border border-neutral-200 px-4 text-sm font-semibold text-neutral-600 hover:bg-neutral-50">Batal</button><button type="submit" className="min-h-11 rounded-xl bg-primary-600 px-5 text-sm font-semibold text-white hover:bg-primary-700">Simpan</button></div>
-    </form>
-  </Modal>;
+    </Modal>
+  );
 }
 
-function DeleteConfirmation({ entry, onClose, onConfirm }: { entry: WinnerEntry; onClose: () => void; onConfirm: () => void }) {
-  return <Modal isOpen onClose={onClose} ariaLabel="Hapus rekap pemenang">
-    <div className="p-6 sm:p-7"><span className="flex size-11 items-center justify-center rounded-xl bg-error-10 text-error-100"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-5"><path d="M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m4 4v6m6-6v6" /></svg></span><h2 className="mt-4 text-lg font-semibold text-neutral-900">Hapus rekap pemenang?</h2><p className="mt-2 text-sm leading-6 text-neutral-500">Data <span className="font-semibold text-neutral-700">{entry.competition}</span> akan dihapus dari tampilan histori ini.</p><div className="mt-6 flex justify-end gap-2"><button type="button" onClick={onClose} className="min-h-10 rounded-xl border border-neutral-200 px-4 text-sm font-semibold text-neutral-600 hover:bg-neutral-50">Batal</button><button type="button" onClick={onConfirm} className="min-h-10 rounded-xl bg-error-100 px-4 text-sm font-semibold text-white hover:bg-error-200">Hapus</button></div></div>
-  </Modal>;
-}
+export function HistoryManagement({
+  role,
+  userName,
+}: {
+  role: 'admin' | 'panitia';
+  userName: string;
+}) {
+  const [periods, setPeriods] = useState<PeriodeHistoriItem[]>(fallbackPeriods);
+  const [selectedPeriodId, setSelectedPeriodId] = useState<number>(1);
+  const [periodDetail, setPeriodDetail] = useState<DetailHistoriPeriode | null>(null);
 
-export function HistoryManagement({ role, userName }: { role: 'admin' | 'panitia'; userName: string }) {
-  const [eventId, setEventId] = useState(events[0].id);
-  const [winnersByEvent, setWinnersByEvent] = useState(initialWinners);
-  const [descriptionByEvent, setDescriptionByEvent] = useState<Record<string, string>>(() => Object.fromEntries(events.map((event) => [event.id, event.description])));
+  const [isLoadingPeriods, setIsLoadingPeriods] = useState(true);
+  const [isLoadingDetail, setIsLoadingDetail] = useState(false);
   const [query, setQuery] = useState('');
+  const [notice, setNotice] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
+
   const [editingWinner, setEditingWinner] = useState<WinnerEntry | null>(null);
   const [isAddingWinner, setIsAddingWinner] = useState(false);
   const [deletingWinner, setDeletingWinner] = useState<WinnerEntry | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
   const [isEditingDescription, setIsEditingDescription] = useState(false);
   const [descriptionDraft, setDescriptionDraft] = useState('');
-  const [notice, setNotice] = useState('');
-  const event = events.find((item) => item.id === eventId) ?? events[0];
-  const winners = winnersByEvent[eventId] ?? emptyWinnerEntries;
-  const description = descriptionByEvent[eventId] ?? event.description;
+  const [isSavingDescription, setIsSavingDescription] = useState(false);
+
+  // Load periods on mount
+  useEffect(() => {
+    let active = true;
+    setIsLoadingPeriods(true);
+
+    getDaftarHistori()
+      .then((res) => {
+        if (!active) return;
+        if (res.data && res.data.length > 0) {
+          setPeriods(res.data);
+          // Default to latest period
+          setSelectedPeriodId(res.data[0].id_periode);
+        }
+      })
+      .catch(() => {
+        // Fallback to initial periods
+      })
+      .finally(() => {
+        if (active) setIsLoadingPeriods(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // Function to load detail of selected period
+  const fetchDetail = useCallback(
+    async (id: number) => {
+      setIsLoadingDetail(true);
+      setErrorMessage('');
+      try {
+        const res = await getDetailHistori(id);
+        setPeriodDetail(res.data);
+      } catch (err) {
+        setErrorMessage(
+          err instanceof Error
+            ? err.message
+            : 'Gagal memuat detail histori kegiatan perayaan.',
+        );
+      } finally {
+        setIsLoadingDetail(false);
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (selectedPeriodId) {
+      fetchDetail(selectedPeriodId);
+    }
+  }, [selectedPeriodId, fetchDetail]);
+
+  const activePeriod = useMemo(() => {
+    return periods.find((p) => p.id_periode === selectedPeriodId) ?? periods[0] ?? fallbackPeriods[0];
+  }, [periods, selectedPeriodId]);
+
+  const dateRangeText = useMemo(() => {
+    return formatDateRange(
+      periodDetail?.tanggal_mulai ?? activePeriod.tanggal_mulai,
+      periodDetail?.tanggal_selesai ?? activePeriod.tanggal_selesai,
+      activePeriod.tahun,
+    );
+  }, [periodDetail, activePeriod]);
+
+  const displayTitle = useMemo(() => {
+    return (
+      periodDetail?.nama_kegiatan ||
+      periodDetail?.judul ||
+      activePeriod.nama_kegiatan ||
+      activePeriod.judul ||
+      `Perayaan ${activePeriod.tahun}`
+    );
+  }, [periodDetail, activePeriod]);
+
+  const displayDescription = useMemo(() => {
+    return (
+      periodDetail?.deskripsi ??
+      activePeriod.deskripsi ??
+      'Belum ada deskripsi rangkuman untuk perayaan ini.'
+    );
+  }, [periodDetail, activePeriod]);
+
+  // Transform lomba & pemenang to flattened table rows
+  const winners = useMemo<WinnerEntry[]>(() => {
+    if (!periodDetail?.lomba) return [];
+
+    const result: WinnerEntry[] = [];
+    for (const l of periodDetail.lomba) {
+      const participantsCount =
+        l.jenis_pendaftaran === 'Beregu'
+          ? `${l.jumlah_regu || l.jumlah_peserta} Regu`
+          : `${l.jumlah_peserta} Peserta`;
+      const location = l.lokasi && l.lokasi.length > 0 ? l.lokasi.join(', ') : 'Area Perayaan';
+
+      if (l.pemenang && l.pemenang.length > 0) {
+        for (const p of l.pemenang) {
+          result.push({
+            id: p.id_pemenang ? `winner-${p.id_pemenang}` : `lomba-${l.id_lomba}-${p.peringkat}`,
+            idPemenang: p.id_pemenang,
+            idLomba: l.id_lomba,
+            competition: l.nama_lomba,
+            category: l.kategori,
+            participants: participantsCount,
+            location,
+            winner: p.nama_pemenang,
+            peringkat: p.peringkat ?? 1,
+            keterangan: p.keterangan,
+            tipePemenang: p.tipe_pemenang || l.jenis_pendaftaran || 'Individu',
+          });
+        }
+      }
+    }
+
+    return result;
+  }, [periodDetail]);
 
   const filteredWinners = useMemo(() => {
-    const search = query.trim().toLocaleLowerCase('id-ID');
-    if (!search) return winners;
-    return winners.filter((item) => `${item.competition} ${item.category} ${item.participants} ${item.location} ${item.winner}`.toLocaleLowerCase('id-ID').includes(search));
+    const s = query.trim().toLocaleLowerCase('id-ID');
+    if (!s) return winners;
+    return winners.filter((item) =>
+      `${item.competition} ${item.category} ${item.participants} ${item.location} ${item.winner} Juara ${item.peringkat}`
+        .toLocaleLowerCase('id-ID')
+        .includes(s),
+    );
   }, [query, winners]);
 
-  function saveWinner(entry: WinnerEntry) {
-    setWinnersByEvent((current) => ({ ...current, [eventId]: [entry, ...(current[eventId] ?? []).filter((item) => item.id !== entry.id)] }));
-    setEditingWinner(null);
-    setIsAddingWinner(false);
-    setNotice(`Rekap ${entry.competition} diperbarui di pratinjau.`);
-  }
-
-  function deleteWinner() {
-    if (!deletingWinner) return;
-    setWinnersByEvent((current) => ({ ...current, [eventId]: (current[eventId] ?? []).filter((item) => item.id !== deletingWinner.id) }));
-    setNotice(`Rekap ${deletingWinner.competition} dihapus dari pratinjau.`);
-    setDeletingWinner(null);
-  }
-
   function beginDescriptionEdit() {
-    setDescriptionDraft(description);
+    setDescriptionDraft(displayDescription);
     setIsEditingDescription(true);
+    setNotice('');
   }
 
-  function saveDescription(event: FormEvent<HTMLFormElement>) {
+  async function saveDescription(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setDescriptionByEvent((current) => ({ ...current, [eventId]: descriptionDraft.trim() }));
-    setIsEditingDescription(false);
-    setNotice('Ringkasan perayaan diperbarui di pratinjau.');
+    if (!selectedPeriodId) return;
+
+    setIsSavingDescription(true);
+    setErrorMessage('');
+    try {
+      await updateHistoriPeriode(selectedPeriodId, {
+        deskripsi: descriptionDraft.trim(),
+      });
+      setPeriodDetail((prev) =>
+        prev ? { ...prev, deskripsi: descriptionDraft.trim() } : null,
+      );
+      setIsEditingDescription(false);
+      setNotice('Ringkasan perayaan berhasil diperbarui di backend.');
+    } catch (err) {
+      setErrorMessage(
+        err instanceof Error ? err.message : 'Gagal memperbarui ringkasan perayaan.',
+      );
+    } finally {
+      setIsSavingDescription(false);
+    }
   }
 
-  return <ManagementLayout role={role} userName={userName} title="Histori" activeItem="history">
-    <div className="space-y-7 lg:space-y-9">
-      <div><p className="text-sm font-medium text-primary-600">Ruang {role === 'admin' ? 'Administrator' : 'Panitia'}</p><h1 className="mt-1 text-[26px] font-semibold tracking-tight text-neutral-900 sm:text-[32px]">Histori</h1></div>
+  async function confirmDeleteWinner() {
+    if (!deletingWinner) return;
 
-      <section aria-label="Pilih histori perayaan" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary-100 bg-white px-4 py-4 sm:px-5">
-        <label htmlFor="history-event" className="sr-only">Pilih perayaan</label>
-        <select id="history-event" value={eventId} onChange={(e) => { setEventId(e.target.value); setQuery(''); setNotice(''); setIsEditingDescription(false); }} className="h-10 min-w-48 rounded-xl border border-neutral-200 bg-white px-3.5 text-sm font-semibold text-primary-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600">{events.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select>
-        <p className="text-sm font-medium text-neutral-400">{event.dateRange}</p>
-      </section>
+    if (!deletingWinner.idPemenang) {
+      // Local fallback removal
+      setPeriodDetail((prev) => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          lomba: prev.lomba.map((l) =>
+            l.id_lomba === deletingWinner.idLomba
+              ? {
+                  ...l,
+                  pemenang: l.pemenang.filter(
+                    (p) =>
+                      p.peringkat !== deletingWinner.peringkat ||
+                      p.nama_pemenang !== deletingWinner.winner,
+                  ),
+                }
+              : l,
+          ),
+        };
+      });
+      setNotice(`Rekap pemenang ${deletingWinner.competition} dihapus.`);
+      setDeletingWinner(null);
+      return;
+    }
 
-      {notice && <p role="status" className="rounded-xl border border-success-100 bg-success-10 px-4 py-3 text-sm font-medium text-success-200">{notice}</p>}
+    setIsDeleting(true);
+    try {
+      await deletePemenang(deletingWinner.idPemenang);
+      setNotice(`Rekap pemenang ${deletingWinner.competition} berhasil dihapus.`);
+      setDeletingWinner(null);
+      await fetchDetail(selectedPeriodId);
+    } catch (err) {
+      setErrorMessage(
+        err instanceof Error ? err.message : 'Gagal menghapus rekap pemenang.',
+      );
+    } finally {
+      setIsDeleting(false);
+    }
+  }
 
-      <section aria-labelledby="history-summary-title" className="relative rounded-2xl border border-primary-100 bg-white p-5 sm:p-7">
-        <div className="flex items-start justify-between gap-4"><h2 id="history-summary-title" className="text-lg font-semibold text-neutral-900 sm:text-xl">{event.title}</h2>{!isEditingDescription && <button type="button" onClick={beginDescriptionEdit} aria-label="Edit ringkasan perayaan" title="Edit ringkasan" className="shrink-0 rounded-lg p-2 text-neutral-400 transition-colors hover:bg-primary-100/40 hover:text-primary-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"><Icon name="edit" className="size-4.5" /></button>}</div>
-        {isEditingDescription ? <form onSubmit={saveDescription} className="mt-4"><label htmlFor="history-description" className="sr-only">Ringkasan perayaan</label><textarea id="history-description" required maxLength={2000} autoFocus value={descriptionDraft} onChange={(e) => setDescriptionDraft(e.target.value)} rows={5} className="w-full resize-y rounded-xl border border-neutral-200 px-4 py-3 text-sm leading-6 text-neutral-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600" /><p className="mt-1 text-right text-xs text-neutral-400">{descriptionDraft.length}/2.000</p><div className="mt-3 flex justify-end gap-2"><button type="button" onClick={() => setIsEditingDescription(false)} className="min-h-10 rounded-xl border border-neutral-200 px-4 text-sm font-semibold text-neutral-600 hover:bg-neutral-50">Batal</button><button type="submit" className="min-h-10 rounded-xl bg-primary-600 px-4 text-sm font-semibold text-white hover:bg-primary-700">Simpan Ringkasan</button></div></form> : <p className="mt-3 whitespace-pre-line text-sm leading-7 text-neutral-500 sm:text-base">{description}</p>}
-      </section>
-
-      <section aria-labelledby="winner-heading" className="overflow-hidden rounded-2xl border border-primary-100 bg-white">
-        <div className="p-4 sm:p-5 lg:p-6">
-          <div className="flex flex-wrap items-center justify-between gap-4"><h2 id="winner-heading" className="text-xl font-semibold tracking-tight text-neutral-900 sm:text-2xl">Rekap Juara Perlombaan</h2><button type="button" onClick={() => { setIsAddingWinner(true); setNotice(''); }} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-primary-600 px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"><span aria-hidden="true" className="text-lg leading-none">+</span>Input Pemenang</button></div>
-          <div className="mt-4 max-w-lg"><label htmlFor="winner-search" className="sr-only">Cari rekap pemenang</label><div className="relative"><Icon name="search" className="pointer-events-none absolute top-1/2 left-3.5 size-5 -translate-y-1/2 text-neutral-400" /><input id="winner-search" type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Cari nama, kategori, atau lokasi lomba" className="h-11 w-full rounded-xl border border-neutral-200 bg-white pr-4 pl-11 text-sm text-neutral-800 placeholder:text-neutral-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600" /></div></div>
+  return (
+    <ManagementLayout role={role} userName={userName} title="Histori" activeItem="history">
+      <div className="space-y-7 lg:space-y-9">
+        <div>
+          <p className="text-sm font-medium text-primary-600">
+            Ruang {role === 'admin' ? 'Administrator' : 'Panitia'}
+          </p>
+          <h1 className="mt-1 text-[26px] font-semibold tracking-tight text-neutral-900 sm:text-[32px]">
+            Histori
+          </h1>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[860px] border-collapse text-left text-sm">
-            <caption className="sr-only">Rekap pemenang perlombaan {event.label}</caption>
-            <thead className="bg-neutral-50 text-xs font-semibold text-neutral-700"><tr><th scope="col" className="px-5 py-4">Cabang Perlombaan</th><th scope="col" className="px-4 py-4">Kategori</th><th scope="col" className="px-4 py-4">Partisipan</th><th scope="col" className="px-4 py-4">Lokasi Pelaksanaan</th><th scope="col" className="px-4 py-4">Pemenang</th><th scope="col" className="px-4 py-4 text-right">Aksi</th></tr></thead>
-            <tbody className="divide-y divide-neutral-100">
-              {filteredWinners.map((item) => <tr key={item.id} className="transition-colors hover:bg-neutral-50/70"><th scope="row" className="px-5 py-4 font-semibold text-neutral-900">{item.competition}</th><td className="px-4 py-4 text-neutral-500">{item.category}</td><td className="px-4 py-4 text-neutral-500">{item.participants}</td><td className="px-4 py-4 text-neutral-500">{item.location}</td><td className="px-4 py-4 text-neutral-600">{item.winner}</td><td className="px-4 py-3"><div className="flex justify-end gap-1"><button type="button" onClick={() => { setEditingWinner(item); setNotice(''); }} aria-label={`Edit pemenang ${item.competition}`} title="Edit" className="rounded-lg p-2 text-primary-600 hover:bg-primary-100/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"><Icon name="edit" className="size-4.5" /></button><button type="button" onClick={() => setDeletingWinner(item)} aria-label={`Hapus rekap ${item.competition}`} title="Hapus" className="rounded-lg p-2 text-primary-600 hover:bg-primary-100/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4.5"><path d="M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m4 4v6m6-6v6" /></svg></button></div></td></tr>)}
-              {filteredWinners.length === 0 && <tr><td colSpan={6} className="px-5 py-14 text-center"><p className="font-semibold text-neutral-800">{query ? 'Rekap tidak ditemukan' : 'Belum ada pemenang'}</p><p className="mt-1 text-sm text-neutral-500">{query ? 'Coba kata kunci lain.' : 'Tambahkan hasil perlombaan untuk perayaan ini.'}</p></td></tr>}
-            </tbody>
-          </table>
-        </div>
-        <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-neutral-100 px-5 py-4 text-xs font-medium text-neutral-400"><span>{filteredWinners.length} Lomba</span><span>{event.label}</span></footer>
-      </section>
-    </div>
+        {/* Periode selector */}
+        <section
+          aria-label="Pilih histori perayaan"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary-100 bg-white px-4 py-4 sm:px-5"
+        >
+          <label htmlFor="history-event" className="sr-only">
+            Pilih perayaan
+          </label>
+          <select
+            id="history-event"
+            value={selectedPeriodId}
+            disabled={isLoadingPeriods}
+            onChange={(e) => {
+              setSelectedPeriodId(Number(e.target.value));
+              setQuery('');
+              setNotice('');
+              setErrorMessage('');
+              setIsEditingDescription(false);
+            }}
+            className="h-10 min-w-48 rounded-xl border border-neutral-200 bg-white px-3.5 text-sm font-semibold text-primary-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
+          >
+            {periods.map((item) => (
+              <option key={item.id_periode} value={item.id_periode}>
+                {item.nama_kegiatan || item.judul || `Perayaan ${item.tahun}`}
+              </option>
+            ))}
+          </select>
+          <p className="text-sm font-medium text-neutral-400">{dateRangeText}</p>
+        </section>
 
-    {(isAddingWinner || editingWinner) && <WinnerForm key={editingWinner?.id ?? 'new'} initial={editingWinner} onClose={() => { setIsAddingWinner(false); setEditingWinner(null); }} onSave={saveWinner} />}
-    {deletingWinner && <DeleteConfirmation entry={deletingWinner} onClose={() => setDeletingWinner(null)} onConfirm={deleteWinner} />}
-  </ManagementLayout>;
+        {notice && (
+          <p
+            role="status"
+            className="rounded-xl border border-success-100 bg-success-10 px-4 py-3 text-sm font-medium text-success-200"
+          >
+            {notice}
+          </p>
+        )}
+
+        {errorMessage && (
+          <div
+            role="alert"
+            className="rounded-xl border border-error-100 bg-error-10 px-4 py-3 text-sm font-medium text-error-100"
+          >
+            {errorMessage}
+          </div>
+        )}
+
+        {/* Ringkasan Perayaan */}
+        <section
+          aria-labelledby="history-summary-title"
+          className="relative rounded-2xl border border-primary-100 bg-white p-5 sm:p-7"
+        >
+          <div className="flex items-start justify-between gap-4">
+            <h2 id="history-summary-title" className="text-lg font-semibold text-neutral-900 sm:text-xl">
+              {displayTitle}
+            </h2>
+            {!isEditingDescription && (
+              <button
+                type="button"
+                onClick={beginDescriptionEdit}
+                aria-label="Edit ringkasan perayaan"
+                title="Edit ringkasan"
+                className="shrink-0 rounded-lg p-2 text-neutral-400 transition-colors hover:bg-primary-100/40 hover:text-primary-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
+              >
+                <Icon name="edit" className="size-4.5" />
+              </button>
+            )}
+          </div>
+
+          {isEditingDescription ? (
+            <form onSubmit={saveDescription} className="mt-4">
+              <label htmlFor="history-description" className="sr-only">
+                Ringkasan perayaan
+              </label>
+              <textarea
+                id="history-description"
+                required
+                maxLength={2000}
+                autoFocus
+                value={descriptionDraft}
+                onChange={(e) => setDescriptionDraft(e.target.value)}
+                rows={5}
+                className="w-full resize-y rounded-xl border border-neutral-200 px-4 py-3 text-sm leading-6 text-neutral-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
+              />
+              <p className="mt-1 text-right text-xs text-neutral-400">
+                {descriptionDraft.length}/2.000
+              </p>
+              <div className="mt-3 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsEditingDescription(false)}
+                  disabled={isSavingDescription}
+                  className="min-h-10 rounded-xl border border-neutral-200 px-4 text-sm font-semibold text-neutral-600 hover:bg-neutral-50 disabled:opacity-50"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingDescription}
+                  className="min-h-10 rounded-xl bg-primary-600 px-4 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-50"
+                >
+                  {isSavingDescription ? 'Menyimpan...' : 'Simpan Ringkasan'}
+                </button>
+              </div>
+            </form>
+          ) : (
+            <p className="mt-3 whitespace-pre-line text-sm leading-7 text-neutral-500 sm:text-base">
+              {displayDescription}
+            </p>
+          )}
+        </section>
+
+        {/* Tabel Rekap Juara Perlombaan */}
+        <section
+          aria-labelledby="winner-heading"
+          className="overflow-hidden rounded-2xl border border-primary-100 bg-white"
+        >
+          <div className="p-4 sm:p-5 lg:p-6">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <h2
+                id="winner-heading"
+                className="text-xl font-semibold tracking-tight text-neutral-900 sm:text-2xl"
+              >
+                Rekap Juara Perlombaan
+              </h2>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsAddingWinner(true);
+                  setNotice('');
+                }}
+                className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-primary-600 px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
+              >
+                <span aria-hidden="true" className="text-lg leading-none">
+                  +
+                </span>
+                Input Pemenang
+              </button>
+            </div>
+            <div className="mt-4 max-w-lg">
+              <label htmlFor="winner-search" className="sr-only">
+                Cari rekap pemenang
+              </label>
+              <div className="relative">
+                <Icon
+                  name="search"
+                  className="pointer-events-none absolute top-1/2 left-3.5 size-5 -translate-y-1/2 text-neutral-400"
+                />
+                <input
+                  id="winner-search"
+                  type="search"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Cari nama, kategori, atau lokasi lomba"
+                  className="h-11 w-full rounded-xl border border-neutral-200 bg-white pr-4 pl-11 text-sm text-neutral-800 placeholder:text-neutral-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[860px] border-collapse text-left text-sm">
+              <caption className="sr-only">
+                Rekap pemenang perlombaan {displayTitle}
+              </caption>
+              <thead className="bg-neutral-50 text-xs font-semibold text-neutral-700">
+                <tr>
+                  <th scope="col" className="px-5 py-4">
+                    Cabang Perlombaan
+                  </th>
+                  <th scope="col" className="px-4 py-4">
+                    Kategori
+                  </th>
+                  <th scope="col" className="px-4 py-4">
+                    Partisipan
+                  </th>
+                  <th scope="col" className="px-4 py-4">
+                    Lokasi Pelaksanaan
+                  </th>
+                  <th scope="col" className="px-4 py-4">
+                    Pemenang
+                  </th>
+                  <th scope="col" className="px-4 py-4 text-right">
+                    Aksi
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-100">
+                {filteredWinners.map((item) => (
+                  <tr key={item.id} className="transition-colors hover:bg-neutral-50/70">
+                    <th scope="row" className="px-5 py-4 font-semibold text-neutral-900">
+                      {item.competition}
+                    </th>
+                    <td className="px-4 py-4 text-neutral-500">{item.category}</td>
+                    <td className="px-4 py-4 text-neutral-500">{item.participants}</td>
+                    <td className="px-4 py-4 text-neutral-500">{item.location}</td>
+                    <td className="px-4 py-4 text-neutral-600">
+                      <span className="font-semibold text-neutral-900">
+                        Juara {item.peringkat}:
+                      </span>{' '}
+                      {item.winner}
+                      {item.keterangan && (
+                        <span className="block text-xs text-neutral-400">
+                          {item.keterangan}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex justify-end gap-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingWinner(item);
+                            setNotice('');
+                          }}
+                          aria-label={`Edit pemenang ${item.competition}`}
+                          title="Edit"
+                          className="rounded-lg p-2 text-primary-600 hover:bg-primary-100/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
+                        >
+                          <Icon name="edit" className="size-4.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDeletingWinner(item)}
+                          aria-label={`Hapus rekap ${item.competition}`}
+                          title="Hapus"
+                          className="rounded-lg p-2 text-primary-600 hover:bg-primary-100/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
+                        >
+                          <svg
+                            aria-hidden="true"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.8"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            className="size-4.5"
+                          >
+                            <path d="M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m4 4v6m6-6v6" />
+                          </svg>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {filteredWinners.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-5 py-14 text-center">
+                      <p className="font-semibold text-neutral-800">
+                        {isLoadingDetail
+                          ? 'Memuat rekap pemenang...'
+                          : query
+                          ? 'Rekap tidak ditemukan'
+                          : 'Belum ada pemenang'}
+                      </p>
+                      <p className="mt-1 text-sm text-neutral-500">
+                        {isLoadingDetail
+                          ? 'Silakan tunggu sebentar...'
+                          : query
+                          ? 'Coba kata kunci lain.'
+                          : 'Tambahkan hasil perlombaan untuk perayaan ini.'}
+                      </p>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-neutral-100 px-5 py-4 text-xs font-medium text-neutral-400">
+            <span>{filteredWinners.length} Pemenang</span>
+            <span>{displayTitle}</span>
+          </footer>
+        </section>
+      </div>
+
+      {(isAddingWinner || editingWinner) && (
+        <WinnerForm
+          key={editingWinner?.id ?? 'new'}
+          initial={editingWinner}
+          lombaList={periodDetail?.lomba ?? []}
+          idPeriode={selectedPeriodId}
+          role={role}
+          onClose={() => {
+            setIsAddingWinner(false);
+            setEditingWinner(null);
+          }}
+          onSuccess={(msg) => {
+            setIsAddingWinner(false);
+            setEditingWinner(null);
+            setNotice(msg);
+            fetchDetail(selectedPeriodId);
+          }}
+        />
+      )}
+
+      {deletingWinner && (
+        <DeleteConfirmation
+          entry={deletingWinner}
+          isDeleting={isDeleting}
+          onClose={() => setDeletingWinner(null)}
+          onConfirm={confirmDeleteWinner}
+        />
+      )}
+    </ManagementLayout>
+  );
 }

@@ -1,14 +1,19 @@
 import type { Metadata } from 'next';
+import { cookies } from 'next/headers';
 import Image from 'next/image';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { AlbumGallery } from '@/components/AlbumGallery';
-import { getAlbumPhotos } from '@/lib/data/album-photos';
+import { type AlbumPhoto, getAlbumPhotos } from '@/lib/data/album-photos';
 import { DAFTAR_ALBUM, getAlbumBySlug } from '@/lib/data/histori';
+import { SESSION_COOKIE } from '@/lib/server/auth';
+import { backendGetAlbumDetail } from '@/lib/server/dokumentasi';
 
 interface AlbumPageProps {
   params: Promise<{ slug: string }>;
 }
+
+export const dynamicParams = true;
 
 export function generateStaticParams() {
   return DAFTAR_ALBUM.map(({ slug }) => ({ slug }));
@@ -16,29 +21,79 @@ export function generateStaticParams() {
 
 export async function generateMetadata({ params }: AlbumPageProps): Promise<Metadata> {
   const { slug } = await params;
-  const album = getAlbumBySlug(slug);
+  const cookieStore = await cookies();
+  const token = cookieStore.get(SESSION_COOKIE)?.value;
 
-  if (!album) notFound();
+  const numId = Number(slug);
+  if (Number.isSafeInteger(numId) && numId > 0) {
+    try {
+      const res = await backendGetAlbumDetail(token, numId);
+      if (res?.data) {
+        return {
+          title: `Dokumentasi ${res.data.nama_album} | PAD`,
+          description: `Album dokumentasi ${res.data.nama_album} kegiatan perayaan kemerdekaan.`,
+        };
+      }
+    } catch {
+      // Fall through to fallback
+    }
+  }
+
+  const album = getAlbumBySlug(slug);
+  if (album) {
+    return {
+      title: `Dokumentasi ${album.judul} | PAD`,
+      description: album.deskripsi,
+    };
+  }
 
   return {
-    title: `Dokumentasi ${album.judul} | PAD`,
-    description: album.deskripsi,
+    title: 'Dokumentasi Album | PAD',
   };
 }
 
 export default async function AlbumPage({ params }: AlbumPageProps) {
   const { slug } = await params;
-  const album = getAlbumBySlug(slug);
+  const cookieStore = await cookies();
+  const token = cookieStore.get(SESSION_COOKIE)?.value;
 
-  if (!album) notFound();
+  let title = '';
+  let photos: AlbumPhoto[] = [];
 
-  const photos = getAlbumPhotos(album.slug, album.judul);
+  const numId = Number(slug);
+  if (Number.isSafeInteger(numId) && numId > 0) {
+    try {
+      const res = await backendGetAlbumDetail(token, numId);
+      if (res?.data) {
+        title = res.data.nama_album;
+        photos = res.data.media
+          .filter((m) => m.jenis_file === 'Foto' || !m.jenis_file)
+          .map((m, idx) => ({
+            id: String(m.id_dokumentasi),
+            src: m.file,
+            alt: m.keterangan || `${res.data.nama_album} - Foto ${idx + 1}`,
+            width: 800,
+            height: 600,
+            filename: m.file.split('/').pop() || `foto-${idx + 1}.jpg`,
+          }));
+      }
+    } catch {
+      // Fall through to fallback
+    }
+  }
+
+  if (!title) {
+    const album = getAlbumBySlug(slug);
+    if (!album) notFound();
+    title = album.judul;
+    photos = getAlbumPhotos(album.slug, album.judul);
+  }
 
   return (
     <main className="min-h-screen grow bg-linear-to-b from-primary-100 to-white">
       <header id="album-header" className="relative bg-white px-5 py-5 shadow-md">
         <h1 className="text-center text-h6 font-bold text-primary-600 sm:text-h5 lg:text-h3">
-          Dokumentasi {album.judul}
+          Dokumentasi {title}
         </h1>
       </header>
 
@@ -51,7 +106,7 @@ export default async function AlbumPage({ params }: AlbumPageProps) {
           Kembali
         </Link>
 
-        <AlbumGallery photos={photos} title={album.judul} />
+        <AlbumGallery photos={photos} title={title} />
       </div>
     </main>
   );
