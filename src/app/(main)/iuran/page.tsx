@@ -1,13 +1,23 @@
 "use client";
 
-import React, { useState, useMemo, useRef, useEffect } from "react";
+import React, { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import Image from "next/image";
 import { Dropdown } from "@/components/Dropdown";
 import { PageSkeleton } from "@/components/skeletons/PageSkeleton";
 import { ApiRequestError } from "@/lib/api/client";
-import { ajukanPembayaranIuran, getDaftarIuran } from "@/lib/api/iuran";
+import {
+  ajukanPembayaranIuran,
+  getDaftarIuran,
+  getPengaturanPembayaran,
+  getTransparansiIuran,
+} from "@/lib/api/iuran";
 import { useAuthStore } from "@/stores/auth-store";
-import type { TagihanIuran } from "@/types/iuran";
+import type {
+  PengaturanPembayaranData,
+  TagihanIuran,
+  TransparansiIuranItem,
+  TransparansiPagination,
+} from "@/types/iuran";
 
 const PAYMENT_OPTIONS = [
   { value: "QRIS", label: "QRIS" },
@@ -16,7 +26,7 @@ const PAYMENT_OPTIONS = [
 
 type IuranStatus = "Lunas" | "Belum Lunas" | "Menunggu Konfirmasi";
 
-interface IuranItem {
+interface DisplayIuranItem {
   id: number;
   nama: string;
   nominal: number | null;
@@ -31,33 +41,55 @@ const MAX_FILE_SIZE = 2 * 1024 * 1024;
 const FILTER_TABS = ["Semua", "Lunas", "Belum Lunas"] as const;
 
 function formatPaymentDate(value: string): string {
-  return new Intl.DateTimeFormat("id-ID", {
-    timeZone: "Asia/Jakarta",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).format(new Date(value)).replace(" pukul ", ", ") + " WIB";
+  return (
+    new Intl.DateTimeFormat("id-ID", {
+      timeZone: "Asia/Jakarta",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    })
+      .format(new Date(value))
+      .replace(" pukul ", ", ") + " WIB"
+  );
 }
 
 function billName(item: TagihanIuran): string {
-  return item.periode?.nama_kegiatan ??
-    (item.periode?.tahun ? `Iuran kegiatan ${item.periode.tahun}` : `Tagihan #${item.id_iuran}`);
+  return (
+    item.periode?.nama_kegiatan ??
+    (item.periode?.tahun ? `Iuran kegiatan ${item.periode.tahun}` : `Tagihan #${item.id_iuran}`)
+  );
 }
 
 export default function IuranPage() {
   const user = useAuthStore((state) => state.user);
-  const [bills, setBills] = useState<TagihanIuran[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [retryKey, setRetryKey] = useState(0);
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const [pendingIds, setPendingIds] = useState<Set<number>>(() => new Set());
+
+  // Transparency State
+  const [transparencyData, setTransparencyData] = useState<TransparansiIuranItem[]>([]);
+  const [paginationMeta, setPaginationMeta] = useState<TransparansiPagination>({
+    current_page: 1,
+    last_page: 1,
+    per_page: 10,
+    total: 0,
+    data: [],
+  });
   const [activeTab, setActiveTab] = useState<string>("Semua");
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [debouncedSearch, setDebouncedSearch] = useState<string>("");
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [isTransparencyLoading, setIsTransparencyLoading] = useState(true);
+  const [transparencyError, setTransparencyError] = useState<string | null>(null);
+
+  // Payment Settings State (QRIS & Bank)
+  const [paymentSettings, setPaymentSettings] = useState<PengaturanPembayaranData | null>(null);
   const [paymentMethodTab, setPaymentMethodTab] = useState<"QRIS" | "Transfer">("QRIS");
+
+  // Citizen Bills State (for Payment Confirmation)
+  const [bills, setBills] = useState<TagihanIuran[]>([]);
+  const [isBillsLoading, setIsBillsLoading] = useState(false);
+  const [pendingIds, setPendingIds] = useState<Set<number>>(() => new Set());
 
   // Form State
   const [selectedIuranId, setSelectedIuranId] = useState<number | null>(null);
@@ -68,39 +100,114 @@ export default function IuranPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // Common UI State
+  const [retryKey, setRetryKey] = useState(0);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  // Debounce search query
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+      setCurrentPage(1);
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [searchQuery]);
+
+  // Fetch Transparency Data
   useEffect(() => {
     const controller = new AbortController();
-    async function load() {
-      setIsLoading(true);
-      setLoadError(null);
+    async function loadTransparency() {
+      setIsTransparencyLoading(true);
+      setTransparencyError(null);
+      try {
+        const response = await getTransparansiIuran(
+          {
+            status: activeTab,
+            search: debouncedSearch,
+            page: currentPage,
+          },
+          controller.signal,
+        );
+        setTransparencyData(response.data.data);
+        setPaginationMeta(response.data);
+        setLastUpdated(new Date());
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          setTransparencyError(
+            error instanceof Error ? error.message : "Data transparansi iuran gagal dimuat.",
+          );
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsTransparencyLoading(false);
+        }
+      }
+    }
+    void loadTransparency();
+    return () => controller.abort();
+  }, [activeTab, debouncedSearch, currentPage, retryKey]);
+
+  // Fetch Payment Settings (Bank & QRIS)
+  useEffect(() => {
+    const controller = new AbortController();
+    async function loadSettings() {
+      try {
+        const response = await getPengaturanPembayaran(controller.signal);
+        if (response.data) {
+          setPaymentSettings(response.data);
+        }
+      } catch {
+        // Graceful fallback for guests or missing settings
+      }
+    }
+    void loadSettings();
+    return () => controller.abort();
+  }, [retryKey, user]);
+
+  // Fetch Citizen Bills (if authenticated)
+  useEffect(() => {
+    if (!user) {
+      setBills([]);
+      setSelectedIuranId(null);
+      return;
+    }
+    const controller = new AbortController();
+    async function loadBills() {
+      setIsBillsLoading(true);
       try {
         const response = await getDaftarIuran(controller.signal);
         setBills(response.data);
-        setLastUpdated(new Date());
         setSelectedIuranId((current) => {
           if (current && response.data.some((item) => item.id_iuran === current)) return current;
-          const payable = response.data.find((item) =>
-            item.status === "Belum Bayar" && item.pembayaran_terakhir?.status_verifikasi !== "Menunggu");
+          const payable = response.data.find(
+            (item) =>
+              item.status === "Belum Bayar" &&
+              item.pembayaran_terakhir?.status_verifikasi !== "Menunggu",
+          );
           return payable?.id_iuran ?? response.data[0]?.id_iuran ?? null;
         });
-      } catch (error) {
-        if (!controller.signal.aborted) {
-          setLoadError(error instanceof Error ? error.message : "Daftar iuran gagal dimuat.");
-        }
+      } catch {
+        // Bills may fail if user is not a citizen account
       } finally {
-        if (!controller.signal.aborted) setIsLoading(false);
+        if (!controller.signal.aborted) {
+          setIsBillsLoading(false);
+        }
       }
     }
-    void load();
+    void loadBills();
     return () => controller.abort();
-  }, [retryKey]);
+  }, [user, retryKey]);
 
-  useEffect(() => () => {
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
+  // Revoke preview URL on unmount or change
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
   }, [previewUrl]);
 
+  // Auto-dismiss toast notification
   useEffect(() => {
     if (!toastMessage) return;
     const timeout = window.setTimeout(() => setToastMessage(null), 5_000);
@@ -114,21 +221,23 @@ export default function IuranPage() {
   const namaKeluarga = user?.nama ?? "";
   const nominalPembayaran = selectedBill?.nominal ?? "";
   const isSelectedPending = selectedBill
-    ? pendingIds.has(selectedBill.id_iuran) || selectedBill.pembayaran_terakhir?.status_verifikasi === "Menunggu"
+    ? pendingIds.has(selectedBill.id_iuran) ||
+      selectedBill.pembayaran_terakhir?.status_verifikasi === "Menunggu"
     : false;
-  const canSubmit = Boolean(selectedBill && selectedBill.status === "Belum Bayar" && !isSelectedPending);
+  const canSubmit = Boolean(
+    user && selectedBill && selectedBill.status === "Belum Bayar" && !isSelectedPending,
+  );
 
-  const data = useMemo<IuranItem[]>(() => bills.map((item) => {
-    const latest = item.pembayaran_terakhir;
-    const pending = pendingIds.has(item.id_iuran) || latest?.status_verifikasi === "Menunggu";
-    return {
+  // Map transparency data to display format
+  const tableData = useMemo<DisplayIuranItem[]>(() => {
+    return transparencyData.map((item) => ({
       id: item.id_iuran,
-      nama: namaKeluarga || "Akun Anda",
+      nama: item.nama_kepala_keluarga,
       nominal: item.nominal,
-      status: item.status === "Sudah Bayar" ? "Lunas" : pending ? "Menunggu Konfirmasi" : "Belum Lunas",
-      waktu: latest ? formatPaymentDate(latest.tanggal_bayar) : "-",
-    };
-  }), [bills, namaKeluarga, pendingIds]);
+      status: item.status,
+      waktu: item.waktu_pembayaran ? formatPaymentDate(item.waktu_pembayaran) : "-",
+    }));
+  }, [transparencyData]);
 
   function clearFile() {
     setSelectedFile(null);
@@ -152,27 +261,14 @@ export default function IuranPage() {
     setPreviewUrl(URL.createObjectURL(file));
   };
 
-  // Filter Table Data
-  const filteredData = useMemo(() => {
-    return data.filter((item) => {
-      if (activeTab !== "Semua") {
-        if (activeTab === "Lunas" && item.status !== "Lunas") return false;
-        if (activeTab === "Belum Lunas" && item.status === "Lunas") return false;
-      }
-
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase().trim();
-        if (!item.nama.toLowerCase().includes(q)) return false;
-      }
-
-      return true;
-    });
-  }, [data, activeTab, searchQuery]);
-
   // Handle Form Submission
   const handleSubmitConfirmation = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
+    if (!user) {
+      setFormError("Silakan masuk dengan akun warga terlebih dahulu.");
+      return;
+    }
     if (!selectedBill || !canSubmit) {
       setFormError("Pilih tagihan yang masih dapat dibayar.");
       return;
@@ -192,20 +288,119 @@ export default function IuranPage() {
       setPendingIds((current) => new Set(current).add(selectedBill.id_iuran));
       setToastMessage(response.message);
       clearFile();
+      setRetryKey((k) => k + 1);
     } catch (error) {
-      setFormError(error instanceof ApiRequestError
-        ? error.message
-        : "Pembayaran gagal diajukan. Silakan coba lagi.");
+      setFormError(
+        error instanceof ApiRequestError
+          ? error.message
+          : "Pembayaran gagal diajukan. Silakan coba lagi.",
+      );
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const handleDownloadQris = () => {
-    alert("File QRIS resmi belum tersedia dari backend.");
+    if (paymentSettings?.qris_image) {
+      const a = document.createElement("a");
+      a.href = paymentSettings.qris_image;
+      a.download = "qris-iuran.png";
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setToastMessage("File QRIS berhasil diunduh.");
+    } else {
+      alert("File QRIS resmi belum tersedia dari backend.");
+    }
   };
 
-  if (isLoading && bills.length === 0 && !loadError) {
+  const handleCopyAccount = () => {
+    if (paymentSettings?.nomor_rekening) {
+      navigator.clipboard.writeText(paymentSettings.nomor_rekening);
+      setToastMessage("Nomor rekening berhasil disalin!");
+    }
+  };
+
+  // Pagination helper
+  const renderPagination = useCallback(() => {
+    const totalPages = Math.max(1, paginationMeta.last_page);
+    const current = paginationMeta.current_page;
+
+    const pages: (number | "...")[] = [];
+    if (totalPages <= 5) {
+      for (let i = 1; i <= totalPages; i++) pages.push(i);
+    } else {
+      pages.push(1);
+      if (current > 3) pages.push("...");
+      const start = Math.max(2, current - 1);
+      const end = Math.min(totalPages - 1, current + 1);
+      for (let i = start; i <= end; i++) pages.push(i);
+      if (current < totalPages - 2) pages.push("...");
+      pages.push(totalPages);
+    }
+
+    return (
+      <div className="flex items-center gap-2 text-xs md:text-sm font-bold text-[#BA1B1B]">
+        <button
+          type="button"
+          disabled={current <= 1}
+          onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+          className="p-1 hover:bg-neutral-200/60 rounded transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+          title="Sebelumnya"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M15.41 16.59L10.83 12L15.41 7.41L14 6L8 12L14 18L15.41 16.59Z" />
+          </svg>
+        </button>
+
+        {pages.map((p, idx) => {
+          if (p === "...") {
+            return (
+              <span key={`ellipsis-${idx}`} className="px-0.5">
+                ...
+              </span>
+            );
+          }
+          if (p === current) {
+            return (
+              <span
+                key={p}
+                className="w-6 h-6 rounded bg-[#BA1B1B] text-white flex items-center justify-center font-bold text-xs"
+              >
+                {p}
+              </span>
+            );
+          }
+          return (
+            <button
+              key={p}
+              type="button"
+              onClick={() => setCurrentPage(p)}
+              className="px-1.5 py-0.5 hover:bg-neutral-200/60 rounded transition-colors cursor-pointer"
+            >
+              {p}
+            </button>
+          );
+        })}
+
+        <button
+          type="button"
+          disabled={current >= totalPages}
+          onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+          className="p-1 hover:bg-neutral-200/60 rounded transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+          title="Selanjutnya"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M8.59 16.59L13.17 12L8.59 7.41L10 6L16 12L10 18L8.59 16.59Z" />
+          </svg>
+        </button>
+      </div>
+    );
+  }, [paginationMeta]);
+
+  if (isTransparencyLoading && transparencyData.length === 0 && !transparencyError) {
     return <PageSkeleton variant="iuran" />;
   }
 
@@ -232,10 +427,17 @@ export default function IuranPage() {
             Transparansi Iuran Warga
           </h1>
 
-          {loadError && (
-            <div role="alert" className="flex flex-col items-start justify-between gap-3 rounded-xl border border-error-100/20 bg-error-10 px-4 py-3 text-sm font-semibold text-error-100 sm:flex-row sm:items-center">
-              <span>{loadError}</span>
-              <button type="button" onClick={() => setRetryKey((value) => value + 1)} className="rounded-lg bg-error-100 px-4 py-2 text-xs font-bold text-white">
+          {transparencyError && (
+            <div
+              role="alert"
+              className="flex flex-col items-start justify-between gap-3 rounded-xl border border-error-100/20 bg-error-10 px-4 py-3 text-sm font-semibold text-error-100 sm:flex-row sm:items-center"
+            >
+              <span>{transparencyError}</span>
+              <button
+                type="button"
+                onClick={() => setRetryKey((value) => value + 1)}
+                className="rounded-lg bg-error-100 px-4 py-2 text-xs font-bold text-white cursor-pointer"
+              >
                 Coba Lagi
               </button>
             </div>
@@ -250,7 +452,10 @@ export default function IuranPage() {
                 return (
                   <button
                     key={tab}
-                    onClick={() => setActiveTab(tab)}
+                    onClick={() => {
+                      setActiveTab(tab);
+                      setCurrentPage(1);
+                    }}
                     className={`px-7 py-2 rounded-xl text-body-2 font-bold transition-all cursor-pointer whitespace-nowrap ${
                       isActive
                         ? "bg-[#BA1B1B] text-white shadow-xs"
@@ -308,14 +513,16 @@ export default function IuranPage() {
 
                 {/* Table Body: Soft Pink Background, No internal borders, generous spacing */}
                 <tbody className="bg-white/45 backdrop-blur-xs">
-                  {filteredData.length === 0 ? (
+                  {tableData.length === 0 ? (
                     <tr>
                       <td colSpan={4} className="py-16 text-center text-neutral-500 font-semibold">
-                        {bills.length === 0 ? "Belum ada tagihan iuran untuk akun ini." : "Tidak ada data warga yang sesuai."}
+                        {isTransparencyLoading
+                          ? "Memuat data transparansi iuran..."
+                          : "Tidak ada data warga yang sesuai."}
                       </td>
                     </tr>
                   ) : (
-                    filteredData.map((item) => {
+                    tableData.map((item) => {
                       return (
                         <tr key={item.id} className="hover:bg-white/60 transition-colors">
                           <td className="py-6 px-8 font-bold text-neutral-900 text-sm md:text-base">
@@ -350,46 +557,16 @@ export default function IuranPage() {
             <div className="bg-neutral-50 px-8 py-4.5 flex flex-col sm:flex-row items-center justify-between gap-4">
               <span className="text-xs md:text-sm font-bold text-[#BA1B1B]">
                 {lastUpdated
-                  ? `Terakhir diperbarui: ${new Intl.DateTimeFormat("id-ID", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(lastUpdated)} WIB`
+                  ? `Terakhir diperbarui: ${new Intl.DateTimeFormat("id-ID", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                      hourCycle: "h23",
+                    }).format(lastUpdated)} WIB`
                   : "Data belum diperbarui"}
               </span>
 
-              {/* Pagination Controls */}
-              <div className="flex items-center gap-2 text-xs md:text-sm font-bold text-[#BA1B1B]">
-                <button
-                  type="button"
-                  className="p-1 hover:bg-neutral-200/60 rounded transition-colors cursor-pointer"
-                  title="Sebelumnya"
-                >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M15.41 16.59L10.83 12L15.41 7.41L14 6L8 12L14 18L15.41 16.59Z" />
-                  </svg>
-                </button>
-
-                <span className="w-6 h-6 rounded bg-[#BA1B1B] text-white flex items-center justify-center font-bold text-xs">
-                  1
-                </span>
-                <button type="button" className="px-1.5 py-0.5 hover:bg-neutral-200/60 rounded transition-colors cursor-pointer">
-                  2
-                </button>
-                <button type="button" className="px-1.5 py-0.5 hover:bg-neutral-200/60 rounded transition-colors cursor-pointer">
-                  3
-                </button>
-                <span className="px-0.5">...</span>
-                <button type="button" className="px-1.5 py-0.5 hover:bg-neutral-200/60 rounded transition-colors cursor-pointer">
-                  5
-                </button>
-
-                <button
-                  type="button"
-                  className="p-1 hover:bg-neutral-200/60 rounded transition-colors cursor-pointer"
-                  title="Selanjutnya"
-                >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M8.59 16.59L13.17 12L8.59 7.41L10 6L16 12L10 18L8.59 16.59Z" />
-                  </svg>
-                </button>
-              </div>
+              {/* Dynamic Pagination Controls */}
+              {renderPagination()}
             </div>
           </div>
         </section>
@@ -401,7 +578,7 @@ export default function IuranPage() {
           </h2>
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
-            
+
             {/* Left Card: QRIS & Transfer Guidance */}
             <div className="lg:col-span-7 bg-white rounded-2xl shadow-xs p-6 md:p-8 flex flex-col justify-between">
               {/* Top Tab Capsule */}
@@ -442,75 +619,90 @@ export default function IuranPage() {
                   {/* Left Column: QR Code Gray Card */}
                   <div className="bg-neutral-50 rounded-2xl p-5 flex flex-col items-center justify-between text-center gap-4">
                     {/* White QR Box */}
-                    <div className="bg-white p-4 rounded-xl shadow-2xs w-full flex items-center justify-center aspect-square">
-                      {/* Stylized QRIS SVG with center 81 badge */}
-                      <svg
-                        width="180"
-                        height="180"
-                        viewBox="0 0 180 180"
-                        fill="none"
-                        xmlns="http://www.w3.org/2000/svg"
-                        className="w-full h-full max-w-47.5 max-h-47.5"
-                      >
-                        {/* Top-Left Finder */}
-                        <rect x="10" y="10" width="48" height="48" rx="5" stroke="#BA1B1B" strokeWidth="5" />
-                        <rect x="22" y="22" width="24" height="24" rx="3" fill="#16161D" />
-
-                        {/* Top-Right Finder */}
-                        <rect x="122" y="10" width="48" height="48" rx="5" stroke="#BA1B1B" strokeWidth="5" />
-                        <rect x="134" y="22" width="24" height="24" rx="3" fill="#16161D" />
-
-                        {/* Bottom-Left Finder */}
-                        <rect x="10" y="122" width="48" height="48" rx="5" stroke="#BA1B1B" strokeWidth="5" />
-                        <rect x="22" y="134" width="24" height="24" rx="3" fill="#16161D" />
-
-                        {/* QR Data modules */}
-                        <rect x="68" y="14" width="12" height="12" fill="#16161D" />
-                        <rect x="96" y="14" width="14" height="14" fill="#BA1B1B" />
-                        <rect x="76" y="34" width="26" height="10" fill="#16161D" />
-                        <rect x="68" y="52" width="12" height="12" fill="#16161D" />
-                        <rect x="98" y="52" width="12" height="12" fill="#BA1B1B" />
-                        
-                        <rect x="14" y="68" width="12" height="12" fill="#16161D" />
-                        <rect x="36" y="70" width="16" height="10" fill="#BA1B1B" />
-                        <rect x="14" y="94" width="14" height="16" fill="#16161D" />
-                        <rect x="38" y="92" width="12" height="14" fill="#16161D" />
-
-                        <rect x="124" y="68" width="14" height="12" fill="#16161D" />
-                        <rect x="148" y="70" width="18" height="12" fill="#16161D" />
-                        <rect x="128" y="92" width="12" height="14" fill="#BA1B1B" />
-                        <rect x="148" y="92" width="18" height="12" fill="#16161D" />
-
-                        <rect x="68" y="118" width="14" height="12" fill="#16161D" />
-                        <rect x="94" y="120" width="16" height="12" fill="#16161D" />
-                        <rect x="68" y="140" width="12" height="26" fill="#BA1B1B" />
-                        <rect x="90" y="146" width="24" height="14" fill="#16161D" />
-                        <rect x="124" y="124" width="12" height="12" fill="#16161D" />
-                        <rect x="148" y="124" width="18" height="12" fill="#BA1B1B" />
-                        <rect x="128" y="146" width="38" height="18" fill="#16161D" />
-
-                        {/* Center Red Badge "81" */}
-                        <circle cx="90" cy="90" r="19" fill="#BA1B1B" />
-                        <text
-                          x="90"
-                          y="97"
-                          textAnchor="middle"
-                          fill="white"
-                          fontWeight="bold"
-                          fontSize="16"
-                          fontFamily="Outfit, sans-serif"
+                    <div className="bg-white p-4 rounded-xl shadow-2xs w-full flex items-center justify-center aspect-square overflow-hidden">
+                      {paymentSettings?.qris_image ? (
+                        <Image
+                          src={paymentSettings.qris_image}
+                          alt="QRIS Resmi Pembayaran"
+                          width={180}
+                          height={180}
+                          unoptimized
+                          className="w-full h-full max-w-47.5 max-h-47.5 object-contain"
+                        />
+                      ) : (
+                        /* Stylized QRIS SVG with center 81 badge */
+                        <svg
+                          width="180"
+                          height="180"
+                          viewBox="0 0 180 180"
+                          fill="none"
+                          xmlns="http://www.w3.org/2000/svg"
+                          className="w-full h-full max-w-47.5 max-h-47.5"
                         >
-                          81
-                        </text>
-                      </svg>
+                          {/* Top-Left Finder */}
+                          <rect x="10" y="10" width="48" height="48" rx="5" stroke="#BA1B1B" strokeWidth="5" />
+                          <rect x="22" y="22" width="24" height="24" rx="3" fill="#16161D" />
+
+                          {/* Top-Right Finder */}
+                          <rect x="122" y="10" width="48" height="48" rx="5" stroke="#BA1B1B" strokeWidth="5" />
+                          <rect x="134" y="22" width="24" height="24" rx="3" fill="#16161D" />
+
+                          {/* Bottom-Left Finder */}
+                          <rect x="10" y="122" width="48" height="48" rx="5" stroke="#BA1B1B" strokeWidth="5" />
+                          <rect x="22" y="134" width="24" height="24" rx="3" fill="#16161D" />
+
+                          {/* QR Data modules */}
+                          <rect x="68" y="14" width="12" height="12" fill="#16161D" />
+                          <rect x="96" y="14" width="14" height="14" fill="#BA1B1B" />
+                          <rect x="76" y="34" width="26" height="10" fill="#16161D" />
+                          <rect x="68" y="52" width="12" height="12" fill="#16161D" />
+                          <rect x="98" y="52" width="12" height="12" fill="#BA1B1B" />
+
+                          <rect x="14" y="68" width="12" height="12" fill="#16161D" />
+                          <rect x="36" y="70" width="16" height="10" fill="#BA1B1B" />
+                          <rect x="14" y="94" width="14" height="16" fill="#16161D" />
+                          <rect x="38" y="92" width="12" height="14" fill="#16161D" />
+
+                          <rect x="124" y="68" width="14" height="12" fill="#16161D" />
+                          <rect x="148" y="70" width="18" height="12" fill="#16161D" />
+                          <rect x="128" y="92" width="12" height="14" fill="#BA1B1B" />
+                          <rect x="148" y="92" width="18" height="12" fill="#16161D" />
+
+                          <rect x="68" y="118" width="14" height="12" fill="#16161D" />
+                          <rect x="94" y="120" width="16" height="12" fill="#16161D" />
+                          <rect x="68" y="140" width="12" height="26" fill="#BA1B1B" />
+                          <rect x="90" y="146" width="24" height="14" fill="#16161D" />
+                          <rect x="124" y="124" width="12" height="12" fill="#16161D" />
+                          <rect x="148" y="124" width="18" height="12" fill="#BA1B1B" />
+                          <rect x="128" y="146" width="38" height="18" fill="#16161D" />
+
+                          {/* Center Red Badge "81" */}
+                          <circle cx="90" cy="90" r="19" fill="#BA1B1B" />
+                          <text
+                            x="90"
+                            y="97"
+                            textAnchor="middle"
+                            fill="white"
+                            fontWeight="bold"
+                            fontSize="16"
+                            fontFamily="Outfit, sans-serif"
+                          >
+                            81
+                          </text>
+                        </svg>
+                      )}
                     </div>
 
                     <div>
                       <p className="text-xs font-bold text-neutral-900 tracking-wide">
-                        NMID: Belum tersedia
+                        {paymentSettings?.atas_nama
+                          ? `Atas Nama: ${paymentSettings.atas_nama}`
+                          : "NMID: Belum tersedia"}
                       </p>
                       <p className="text-[11px] font-bold text-neutral-600 tracking-wider uppercase mt-0.5">
-                        MENUNGGU DATA DARI BACKEND
+                        {paymentSettings?.nama_bank
+                          ? `PEMBAYARAN RESMI ${paymentSettings.nama_bank.toUpperCase()}`
+                          : "MENUNGGU DATA DARI BACKEND"}
                       </p>
                     </div>
                   </div>
@@ -549,7 +741,7 @@ export default function IuranPage() {
                         Nama Bank
                       </label>
                       <div className="h-11 bg-neutral-100 rounded-xl px-4 flex items-center text-xs md:text-sm font-bold text-neutral-900">
-                        Belum tersedia dari backend
+                        {paymentSettings?.nama_bank || "Belum tersedia dari backend"}
                       </div>
                     </div>
 
@@ -558,7 +750,7 @@ export default function IuranPage() {
                         Nama Rekening
                       </label>
                       <div className="h-11 bg-neutral-100 rounded-xl px-4 flex items-center text-xs md:text-sm font-bold text-neutral-900">
-                        Belum tersedia dari backend
+                        {paymentSettings?.atas_nama || "Belum tersedia dari backend"}
                       </div>
                     </div>
 
@@ -567,14 +759,24 @@ export default function IuranPage() {
                         Nomor Rekening
                       </label>
                       <div className="h-11 bg-neutral-100 rounded-xl px-4 flex items-center justify-between text-xs md:text-sm font-bold text-neutral-900 tracking-wider">
-                        <span>Belum tersedia</span>
-                        <button
-                          type="button"
-                          disabled
-                          className="cursor-not-allowed text-xs font-bold text-neutral-400"
-                        >
-                          Salin
-                        </button>
+                        <span>{paymentSettings?.nomor_rekening || "Belum tersedia"}</span>
+                        {paymentSettings?.nomor_rekening ? (
+                          <button
+                            type="button"
+                            onClick={handleCopyAccount}
+                            className="cursor-pointer text-xs font-bold text-[#BA1B1B] hover:underline"
+                          >
+                            Salin
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled
+                            className="cursor-not-allowed text-xs font-bold text-neutral-400"
+                          >
+                            Salin
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -621,8 +823,16 @@ export default function IuranPage() {
                         value: String(item.id_iuran),
                         label: `${billName(item)} — Rp ${nominalFormatter.format(item.nominal)}`,
                       }))}
-                      placeholder="Pilih tagihan"
-                      disabled={bills.length === 0}
+                      placeholder={
+                        !user
+                          ? "Silakan login sebagai warga"
+                          : isBillsLoading
+                          ? "Memuat tagihan..."
+                          : bills.length === 0
+                          ? "Tidak ada tagihan aktif"
+                          : "Pilih tagihan"
+                      }
+                      disabled={!user || bills.length === 0}
                     />
                   </div>
 
@@ -635,7 +845,7 @@ export default function IuranPage() {
                       type="text"
                       readOnly
                       value={namaKeluarga}
-                      placeholder="Nama akun"
+                      placeholder={user ? "Nama akun" : "Silakan masuk akun warga"}
                       className="w-full h-11 bg-neutral-100 text-neutral-900 placeholder:text-neutral-400 rounded-xl px-4 text-xs md:text-sm font-medium focus:outline-none"
                     />
                   </div>
@@ -685,7 +895,7 @@ export default function IuranPage() {
                         }
                       }}
                     />
-                    
+
                     <button
                       type="button"
                       disabled={!canSubmit}
@@ -723,14 +933,24 @@ export default function IuranPage() {
                           <span className="truncate max-w-55 inline-block">
                             {selectedFile.name}
                           </span>
+                        ) : !user ? (
+                          "Masuk akun warga untuk bayar"
+                        ) : canSubmit ? (
+                          "Klik untuk Unggah Bukti Pembayaran"
                         ) : (
-                          canSubmit ? "Klik untuk Unggah Bukti Pembayaran" : "Pilih tagihan yang dapat dibayar"
+                          "Pilih tagihan yang dapat dibayar"
                         )}
                       </p>
                     </button>
                   </div>
 
-                  {!canSubmit && selectedBill && (
+                  {!user && (
+                    <p className="rounded-xl bg-secondary-100/70 px-4 py-3 text-xs font-semibold text-secondary-700">
+                      Silakan masuk dengan akun warga untuk mengonfirmasi dan membayar iuran.
+                    </p>
+                  )}
+
+                  {user && !canSubmit && selectedBill && (
                     <p className="rounded-xl bg-secondary-100/70 px-4 py-3 text-xs font-semibold text-secondary-700">
                       {selectedBill.status === "Sudah Bayar"
                         ? "Tagihan ini sudah lunas."

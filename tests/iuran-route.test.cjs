@@ -6,6 +6,8 @@ const { NextRequest } = require('next/server');
 const { GET: getIuran } = require('../src/app/api/warga/iuran/route.ts');
 const { GET: getDetailIuran } = require('../src/app/api/warga/iuran/[id]/route.ts');
 const { POST: postPembayaran } = require('../src/app/api/warga/iuran/[id]/pembayaran/route.ts');
+const { GET: getTransparansi } = require('../src/app/api/warga/iuran/transparansi/route.ts');
+const { GET: getPengaturanPembayaran } = require('../src/app/api/pengaturan-pembayaran/route.ts');
 const { SESSION_COOKIE } = require('../src/lib/server/auth.ts');
 
 const originalFetch = global.fetch;
@@ -197,4 +199,86 @@ test('payment submission maps pending and backend validation conflicts to action
   assert.deepEqual(await invalid.json(), {
     message: 'Pembayaran tidak valid. Pastikan nominal sesuai tagihan dan bukti bayar memenuhi ketentuan.',
   });
+});
+
+test('transparansi forwards query params and normalizes money, dates, and pagination', async () => {
+  global.fetch = async (url) => {
+    assert.equal(
+      String(url),
+      'https://backend.example/api/warga/iuran/transparansi?status=Lunas&search=Budi&page=2&per_page=10',
+    );
+    return Response.json({
+      success: true,
+      message: 'Transparansi berhasil diambil.',
+      data: {
+        current_page: 2,
+        last_page: 5,
+        per_page: 10,
+        total: 50,
+        data: [{
+          id_iuran: 15,
+          id_periode: 1,
+          periode: {
+            id_periode: 1,
+            tahun: 2026,
+            nama_kegiatan: 'Semarak HUT RI ke-81',
+          },
+          nama_kepala_keluarga: 'Budi Santoso',
+          nominal: '75000.00',
+          status: 'Lunas',
+          waktu_pembayaran: '2026-11-10T14:30:00.000000Z',
+        }],
+      },
+    });
+  };
+
+  const req = new NextRequest(
+    'https://frontend.example/api/warga/iuran/transparansi?status=Lunas&search=Budi&page=2&per_page=10',
+  );
+  const response = await getTransparansi(req);
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.success, true);
+  assert.equal(body.data.current_page, 2);
+  assert.equal(body.data.last_page, 5);
+  assert.equal(body.data.data.length, 1);
+  assert.equal(body.data.data[0].nominal, 75000);
+  assert.equal(body.data.data[0].status, 'Lunas');
+  assert.equal(body.data.data[0].nama_kepala_keluarga, 'Budi Santoso');
+});
+
+test('pengaturan pembayaran returns bank and QRIS details or falls back cleanly', async () => {
+  global.fetch = async (url, init) => {
+    assert.equal(String(url), 'https://backend.example/api/pengaturan-pembayaran');
+    assert.equal(init.headers.get('Authorization'), 'Bearer test-token');
+    return Response.json({
+      success: true,
+      message: 'Pengaturan pembayaran berhasil diambil.',
+      data: {
+        id_pengaturan: 1,
+        nama_bank: 'BCA',
+        nomor_rekening: '1234567890',
+        atas_nama: 'Panitia 17 Agustus',
+        qris_image: 'https://example.com/qris.png',
+      },
+    });
+  };
+
+  const reqWithToken = getRequest('/api/pengaturan-pembayaran', 'test-token');
+  const response = await getPengaturanPembayaran(reqWithToken);
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.success, true);
+  assert.equal(body.data.nama_bank, 'BCA');
+  assert.equal(body.data.nomor_rekening, '1234567890');
+  assert.equal(body.data.atas_nama, 'Panitia 17 Agustus');
+  assert.equal(body.data.qris_image, 'https://example.com/qris.png');
+
+  // When no token is passed (guest), falls back to cached settings
+  const reqGuest = getRequest('/api/pengaturan-pembayaran', '');
+  const guestResponse = await getPengaturanPembayaran(reqGuest);
+  assert.equal(guestResponse.status, 200);
+  const guestBody = await guestResponse.json();
+  assert.equal(guestBody.success, true);
+  assert.deepEqual(guestBody.data, body.data);
 });

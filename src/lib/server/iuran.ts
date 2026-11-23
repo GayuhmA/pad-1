@@ -7,9 +7,14 @@ import type {
   DaftarIuranResponse,
   DetailIuran,
   DetailIuranResponse,
+  PengaturanPembayaranData,
+  PengaturanPembayaranResponse,
   PeriodeIuran,
   RingkasanPembayaranIuran,
   TagihanIuran,
+  TransparansiIuranItem,
+  TransparansiIuranParams,
+  TransparansiIuranResponse,
 } from '@/types/iuran';
 
 const backendDispatcher = new Agent({
@@ -169,18 +174,99 @@ function readPaymentResponse(value: unknown): AjukanPembayaranIuranResponse {
   return { success: true, message: text(response.message) };
 }
 
+function transparansiItem(value: unknown): TransparansiIuranItem {
+  const item = record(value);
+  const statusRaw = item.status;
+  if (statusRaw !== 'Lunas' && statusRaw !== 'Belum Lunas' && statusRaw !== 'Menunggu Konfirmasi') {
+    invalidResponse();
+  }
+  return {
+    id_iuran: integer(item.id_iuran),
+    id_periode: typeof item.id_periode === 'number' && item.id_periode > 0 ? item.id_periode : 1,
+    periode: item.periode ? period(item) : null,
+    nama_kepala_keluarga: text(item.nama_kepala_keluarga),
+    nominal: amount(item.nominal),
+    status: statusRaw,
+    waktu_pembayaran: nullableTimestamp(item.waktu_pembayaran),
+  };
+}
+
+export function readTransparansiIuranResponse(value: unknown): TransparansiIuranResponse {
+  const response = record(value);
+  if (response.success !== true) invalidResponse();
+  const rawData = record(response.data);
+  const list = rawData.data;
+  if (!Array.isArray(list)) invalidResponse();
+  const currentPage = typeof rawData.current_page === 'number' ? rawData.current_page : 1;
+  const lastPage = typeof rawData.last_page === 'number' ? rawData.last_page : 1;
+  const perPage = typeof rawData.per_page === 'number' ? rawData.per_page : 10;
+  const total = typeof rawData.total === 'number' ? rawData.total : list.length;
+
+  return {
+    success: true,
+    message: typeof response.message === 'string' ? response.message : 'Transparansi iuran berhasil diambil.',
+    data: {
+      current_page: currentPage,
+      last_page: lastPage,
+      per_page: perPage,
+      total,
+      data: list.map(transparansiItem),
+    },
+  };
+}
+
+let cachedPaymentSettings: PengaturanPembayaranData | null = null;
+
+export function updateCachedPaymentSettings(settings: PengaturanPembayaranData | null) {
+  if (settings) {
+    cachedPaymentSettings = settings;
+  }
+}
+
+export function readPengaturanPembayaranResponse(value: unknown): PengaturanPembayaranResponse {
+  const response = record(value);
+  if (response.success !== true) invalidResponse();
+  const rawData = response.data == null ? null : record(response.data);
+  let qrisUrl = nullableText(rawData?.qris_image);
+  if (qrisUrl && qrisUrl.startsWith('/')) {
+    qrisUrl = `${apiBase()}${qrisUrl}`;
+  }
+
+  const data: PengaturanPembayaranData | null = rawData
+    ? {
+        id_pengaturan: typeof rawData.id_pengaturan === 'number' ? rawData.id_pengaturan : null,
+        nama_bank: nullableText(rawData.nama_bank),
+        nomor_rekening: nullableText(rawData.nomor_rekening),
+        atas_nama: nullableText(rawData.atas_nama),
+        qris_image: qrisUrl,
+      }
+    : null;
+
+  if (data) {
+    cachedPaymentSettings = data;
+  }
+
+  return {
+    success: true,
+    message: typeof response.message === 'string' ? response.message : 'Pengaturan pembayaran berhasil diambil.',
+    data,
+  };
+}
+
 function apiBase(): string {
   const base = process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL;
   if (!base) throw new IuranServiceError(503, 'Layanan iuran belum dikonfigurasi.');
   return base.replace(/\/$/, '');
 }
 
-async function performRequest(endpoint: string, token: string, init: RequestInit): Promise<unknown> {
+async function performRequest(endpoint: string, token: string | undefined, init: RequestInit): Promise<unknown> {
   let response: Response;
   try {
     const headers = new Headers(init.headers);
     headers.set('Accept', 'application/json');
-    headers.set('Authorization', `Bearer ${token}`);
+    if (token) {
+      headers.set('Authorization', `Bearer ${token}`);
+    }
     response = await fetch(`${apiBase()}${endpoint}`, {
       ...init,
       headers,
@@ -193,7 +279,7 @@ async function performRequest(endpoint: string, token: string, init: RequestInit
     const cause = error instanceof Error ? error.cause : undefined;
     const code = cause && typeof cause === 'object' && 'code' in cause ? cause.code : undefined;
     console.warn('[iuran/backend] connection failed', {
-      endpoint: endpoint.replace(/\/\d+/g, '/:id'),
+      endpoint: endpoint.replace(/\/\d+/g, '/:id').split('?')[0],
       code: typeof code === 'string' && /^[A-Z_]{1,64}$/.test(code) ? code
         : error instanceof Error && error.name === 'TimeoutError' ? 'TIMEOUT' : 'NETWORK_ERROR',
     });
@@ -240,4 +326,64 @@ export async function backendAjukanPembayaranIuran(
     body,
   });
   return readPaymentResponse(response);
+}
+
+export async function backendTransparansiIuran(
+  params?: TransparansiIuranParams,
+  token?: string,
+): Promise<TransparansiIuranResponse> {
+  const searchParams = new URLSearchParams();
+  if (params?.status && params.status !== 'Semua') {
+    searchParams.set('status', params.status);
+  }
+  if (params?.search && params.search.trim()) {
+    searchParams.set('search', params.search.trim());
+  }
+  if (params?.page && Number.isSafeInteger(params.page) && params.page > 0) {
+    searchParams.set('page', String(params.page));
+  }
+  if (params?.per_page && Number.isSafeInteger(params.per_page) && params.per_page > 0) {
+    searchParams.set('per_page', String(params.per_page));
+  }
+  if (params?.id_periode && Number.isSafeInteger(params.id_periode) && params.id_periode > 0) {
+    searchParams.set('id_periode', String(params.id_periode));
+  }
+  const query = searchParams.toString();
+  const endpoint = `/api/warga/iuran/transparansi${query ? `?${query}` : ''}`;
+  const response = await performRequest(endpoint, token, { method: 'GET' });
+  return readTransparansiIuranResponse(response);
+}
+
+export async function backendPengaturanPembayaran(
+  token?: string,
+): Promise<PengaturanPembayaranResponse> {
+  if (token) {
+    try {
+      const response = await performRequest('/api/pengaturan-pembayaran', token, { method: 'GET' });
+      return readPengaturanPembayaranResponse(response);
+    } catch (error) {
+      if (error instanceof IuranServiceError && (error.status === 401 || error.status === 403)) {
+        if (cachedPaymentSettings) {
+          return {
+            success: true,
+            message: 'Pengaturan pembayaran berhasil diambil.',
+            data: cachedPaymentSettings,
+          };
+        }
+        return {
+          success: true,
+          message: 'Pengaturan pembayaran tidak tersedia.',
+          data: null,
+        };
+      }
+      throw error;
+    }
+  }
+
+  // When unauthenticated or guest, return cached payment settings if available
+  return {
+    success: true,
+    message: cachedPaymentSettings ? 'Pengaturan pembayaran berhasil diambil.' : 'Sesi akun belum tersedia.',
+    data: cachedPaymentSettings,
+  };
 }
