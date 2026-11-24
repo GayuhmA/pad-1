@@ -256,7 +256,7 @@ export default function PendaftaranPage() {
                   const time = schedule ? scheduleTime(schedule) : null;
                   const shownStatus = displayStatus(item);
                   const badge = statusBadge(shownStatus);
-                  const canShowCancellation = normalize(item.status) !== "dibatalkan";
+                  const canShowCancellation = normalize(item.status) === "menunggu";
                   return (
                     <article key={item.id_pendaftaran} className="rounded-2xl bg-white p-6 shadow-xs md:p-8">
                       <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-start">

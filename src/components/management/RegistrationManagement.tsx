@@ -1,11 +1,12 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Icon, ManagementLayout } from '@/components/management/ManagementDashboard';
+import { getManagementPendaftaran, updateRegistrationStatus } from '@/lib/api/management-pendaftaran';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-type RegistrationStatus = 'Menunggu' | 'Diterima' | 'Ditolak';
+type RegistrationStatus = 'Menunggu' | 'Diterima' | 'Ditolak' | 'Dibatalkan';
 type FilterTab = 'Semua' | RegistrationStatus;
 
 interface Registration {
@@ -86,9 +87,11 @@ function StatusBadge({ status }: { status: RegistrationStatus }) {
     Diterima: 'bg-[#D1FAE5] text-[#047857]',
     // pink-red pill — matches mockup "Ditolak"
     Ditolak: 'bg-primary-100 text-primary-700',
+    // neutral pill — matches mockup "Dibatalkan"
+    Dibatalkan: 'bg-neutral-100 text-neutral-600',
   };
   return (
-    <span className={`inline-flex whitespace-nowrap rounded-lg px-2.5 py-1 text-xs font-semibold ${styles[status]}`}>
+    <span className={`inline-flex whitespace-nowrap rounded-lg px-2.5 py-1 text-xs font-semibold ${styles[status] ?? 'bg-neutral-100 text-neutral-600'}`}>
       {status}
     </span>
   );
@@ -214,24 +217,54 @@ export function RegistrationManagement({
   role: 'admin' | 'panitia';
   userName: string;
 }) {
-  const [registrations, setRegistrations] = useState(initialRegistrations);
+  const [registrations, setRegistrations] = useState<Registration[]>(initialRegistrations);
+  const [quotas, setQuotas] = useState<LombaQuota[]>(lombaQuotas);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<FilterTab>('Semua');
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
   const [dialog, setDialog] = useState<DialogState>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoading(true);
+    setLoadError(null);
+    getManagementPendaftaran({ role }, controller.signal)
+      .then((res) => {
+        if (res.data.registrations) {
+          setRegistrations(res.data.registrations);
+        }
+        if (res.data.quotas && res.data.quotas.length > 0) {
+          setQuotas(res.data.quotas);
+        }
+      })
+      .catch((err: unknown) => {
+        if (!controller.signal.aborted) {
+          setLoadError(err instanceof Error ? err.message : 'Pendaftaran gagal dimuat.');
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
+  }, [role]);
 
   // ── Metrics
   const total = registrations.length;
   const menunggu = registrations.filter((r) => r.status === 'Menunggu').length;
   const diterima = registrations.filter((r) => r.status === 'Diterima').length;
   const ditolak = registrations.filter((r) => r.status === 'Ditolak').length;
+  const dibatalkan = registrations.filter((r) => r.status === 'Dibatalkan').length;
 
   const metrics = [
     { label: 'Total pendaftar', value: total },
     { label: 'Menunggu keputusan', value: menunggu },
     { label: 'Diterima', value: diterima },
-    { label: 'Ditolak', value: ditolak },
+    { label: 'Ditolak / Batal', value: ditolak + dibatalkan },
   ];
 
   // ── Filter + search
@@ -256,10 +289,30 @@ export function RegistrationManagement({
   );
 
   // ── Actions
+  async function handleUpdateStatus(id: string, status: 'Diterima' | 'Ditolak') {
+    setIsSubmitting(true);
+    setActionError(null);
+    try {
+      await updateRegistrationStatus(id, { status }, role);
+      setRegistrations((prev) =>
+        prev.map((r) => (r.id === id ? { ...r, status } : r)),
+      );
+      setDialog(null);
+    } catch (err: unknown) {
+      setActionError(err instanceof Error ? err.message : 'Gagal memperbarui status pendaftaran.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
   function updateStatus(id: string, status: RegistrationStatus) {
-    setRegistrations((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, status } : r)),
-    );
+    if (status === 'Diterima' || status === 'Ditolak') {
+      void handleUpdateStatus(id, status);
+    } else {
+      setRegistrations((prev) =>
+        prev.map((r) => (r.id === id ? { ...r, status } : r)),
+      );
+    }
   }
 
   function handleTabChange(tab: FilterTab) {
@@ -287,6 +340,17 @@ export function RegistrationManagement({
 
   return (
     <ManagementLayout role={role} userName={userName} title="Kelola Pendaftaran" activeItem="registrations">
+      {loadError && (
+        <p role="alert" className="mb-5 rounded-xl bg-error-10 px-4 py-3 text-sm text-error-100">
+          Pembaruan data pendaftaran gagal: {loadError}
+        </p>
+      )}
+      {actionError && (
+        <div role="alert" className="mb-5 flex items-center justify-between rounded-xl bg-error-10 px-4 py-3 text-sm text-error-100">
+          <span>{actionError}</span>
+          <button type="button" onClick={() => setActionError(null)} className="font-bold">×</button>
+        </div>
+      )}
       {/* ── Page header */}
       <section className="mb-7 sm:mb-8">
         <p className="mb-1 text-sm font-medium text-primary-600">Ruang Panitia</p>
@@ -333,7 +397,7 @@ export function RegistrationManagement({
         <div className="flex flex-col gap-3 border-b border-neutral-100 p-4 sm:p-5">
           {/* Tab filters */}
           <div className="flex flex-wrap gap-2">
-            {(['Semua', 'Menunggu', 'Diterima', 'Ditolak'] as FilterTab[]).map((tab) => (
+            {(['Semua', 'Menunggu', 'Diterima', 'Ditolak', 'Dibatalkan'] as FilterTab[]).map((tab) => (
               <FilterTab
                 key={tab}
                 label={tab}
@@ -471,56 +535,7 @@ export function RegistrationManagement({
                           </div>
                         </>
                       ) : (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => setDialog({ type: 'batalkan', id: reg.id })}
-                            className="text-sm font-semibold text-primary-600 hover:text-primary-700"
-                          >
-                            Batalkan
-                          </button>
-
-                          <div className="relative ml-1">
-                            <button
-                              type="button"
-                              aria-label={`Aksi lainnya untuk ${reg.peserta}`}
-                              onClick={() =>
-                                setOpenMenuId((prev) => (prev === reg.id ? null : reg.id))
-                              }
-                              className="flex size-8 items-center justify-center rounded-lg text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-600"
-                            >
-                              <Icon name="dots" className="size-4" />
-                            </button>
-                            {openMenuId === reg.id && (
-                              <div className="absolute top-full right-0 z-20 mt-1 w-44 rounded-xl border border-neutral-100 bg-white p-1.5 shadow-lg">
-                                {reg.status === 'Ditolak' && (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      updateStatus(reg.id, 'Diterima');
-                                      setOpenMenuId(null);
-                                    }}
-                                    className="w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-neutral-700 hover:bg-neutral-50"
-                                  >
-                                    Terima sekarang
-                                  </button>
-                                )}
-                                {reg.status === 'Diterima' && (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      updateStatus(reg.id, 'Ditolak');
-                                      setOpenMenuId(null);
-                                    }}
-                                    className="w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-error-100 hover:bg-error-10"
-                                  >
-                                    Tolak
-                                  </button>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        </>
+                        <span className="text-xs font-medium text-neutral-400">—</span>
                       )}
                     </div>
                   </td>
@@ -626,7 +641,7 @@ export function RegistrationManagement({
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {lombaQuotas.map((quota) => (
+          {quotas.map((quota) => (
             <QuotaBar key={quota.id} quota={quota} />
           ))}
         </div>
@@ -637,32 +652,30 @@ export function RegistrationManagement({
         <ConfirmModal
           title="Terima Pendaftaran"
           description={`Konfirmasi penerimaan pendaftaran ${dialogReg.peserta} untuk lomba ${dialogReg.lomba}?`}
-          confirmLabel="Ya, Terima"
+          confirmLabel={isSubmitting ? 'Memproses…' : 'Ya, Terima'}
           confirmClass="bg-success-100 hover:bg-success-200"
-          onConfirm={() => updateStatus(dialog.id, 'Diterima')}
-          onClose={() => setDialog(null)}
+          onConfirm={() => void handleUpdateStatus(dialog.id, 'Diterima')}
+          onClose={() => { if (!isSubmitting) setDialog(null); }}
         />
       )}
       {dialog?.type === 'tolak' && dialogReg && (
         <ConfirmModal
           title="Tolak Pendaftaran"
           description={`Apakah Anda yakin ingin menolak pendaftaran ${dialogReg.peserta} untuk lomba ${dialogReg.lomba}?`}
-          confirmLabel="Ya, Tolak"
+          confirmLabel={isSubmitting ? 'Memproses…' : 'Ya, Tolak'}
           confirmClass="bg-error-100 hover:bg-error-100/90"
-          onConfirm={() => updateStatus(dialog.id, 'Ditolak')}
-          onClose={() => setDialog(null)}
+          onConfirm={() => void handleUpdateStatus(dialog.id, 'Ditolak')}
+          onClose={() => { if (!isSubmitting) setDialog(null); }}
         />
       )}
       {dialog?.type === 'batalkan' && dialogReg && (
         <ConfirmModal
           title="Batalkan Pendaftaran"
-          description={`Batalkan pendaftaran ${dialogReg.peserta} untuk lomba ${dialogReg.lomba}? Tindakan ini tidak dapat dibatalkan.`}
-          confirmLabel="Ya, Batalkan"
-          confirmClass="bg-neutral-900 hover:bg-neutral-700"
-          onConfirm={() =>
-            setRegistrations((prev) => prev.filter((r) => r.id !== dialog.id))
-          }
-          onClose={() => setDialog(null)}
+          description={`Batalkan pendaftaran ${dialogReg.peserta} untuk lomba ${dialogReg.lomba}? Status pendaftaran akan ditolak.`}
+          confirmLabel={isSubmitting ? 'Memproses…' : 'Ya, Batalkan'}
+          confirmClass="bg-error-100 hover:bg-error-200"
+          onConfirm={() => void handleUpdateStatus(dialog.id, 'Ditolak')}
+          onClose={() => { if (!isSubmitting) setDialog(null); }}
         />
       )}
 

@@ -195,6 +195,16 @@ export async function backendBatalkanPendaftaran(
   }
 
   if (!response.ok) {
+    let backendMessage: string | undefined;
+    try {
+      const errBody = await response.json();
+      if (errBody && typeof errBody === 'object' && typeof (errBody as Record<string, unknown>).message === 'string') {
+        backendMessage = (errBody as Record<string, unknown>).message as string;
+      }
+    } catch {
+      // ignore
+    }
+
     const messages: Record<number, string> = {
       401: 'Sesi telah berakhir. Silakan masuk kembali.',
       403: 'Anda tidak dapat membatalkan pendaftaran ini.',
@@ -202,8 +212,10 @@ export async function backendBatalkanPendaftaran(
       422: 'Pendaftaran ini sudah tidak dapat dibatalkan.',
       429: 'Terlalu banyak permintaan. Tunggu sebentar sebelum mencoba lagi.',
     };
-    throw new PendaftaranServiceError(messages[response.status] ? response.status : 502,
-      messages[response.status] ?? 'Layanan pendaftaran sedang bermasalah. Silakan coba lagi.');
+    throw new PendaftaranServiceError(
+      messages[response.status] ? response.status : 502,
+      backendMessage ?? messages[response.status] ?? 'Layanan pendaftaran sedang bermasalah. Silakan coba lagi.',
+    );
   }
 
   let body: unknown;
