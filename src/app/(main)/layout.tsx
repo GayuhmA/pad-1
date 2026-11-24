@@ -8,11 +8,13 @@ export default function MainLayout({
   children: React.ReactNode;
 }) {
   return (
-    <AuthBoundary>
+    <div className="flex min-h-screen flex-col">
       <Navbar />
-      <main className="grow">{children}</main>
+      <main className="grow">
+        <AuthBoundary>{children}</AuthBoundary>
+      </main>
       <Footer />
-    </AuthBoundary>
+    </div>
   );
 }
 

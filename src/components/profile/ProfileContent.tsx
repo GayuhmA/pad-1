@@ -11,6 +11,7 @@ import { useAuthStore } from '@/stores/auth-store';
 import { ProfileDialog } from '@/components/profile/ProfileDialog';
 import { EditProfileForm } from '@/components/profile/EditProfileForm';
 import { ManagePasswordForm } from '@/components/profile/ManagePasswordForm';
+import { PageSkeleton } from '@/components/skeletons/PageSkeleton';
 
 function ProfileField({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -44,7 +45,7 @@ export function ProfileContent() {
     }
   }
 
-  if (!profile) return null;
+  if (!profile) return <PageSkeleton variant="profile" />;
 
   return (
     <div className="bg-linear-to-b from-primary-100 to-white">

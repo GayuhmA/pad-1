@@ -101,10 +101,24 @@ export function NotificationCenter() {
                 </li>
               ))}
             </ul>
+          ) : isLoading ? (
+            <div className="space-y-4" role="status" aria-live="polite">
+              <span className="sr-only">Memuat notifikasi…</span>
+              {[1, 2, 3].map((item) => (
+                <div key={item} className="animate-pulse rounded-2xl border border-neutral-100 bg-white p-6 space-y-3">
+                  <div className="flex justify-between">
+                    <div className="h-5 w-40 rounded bg-neutral-200" />
+                    <div className="h-4 w-24 rounded bg-neutral-200" />
+                  </div>
+                  <div className="h-4 w-3/4 rounded bg-neutral-200" />
+                  <div className="h-3 w-1/2 rounded bg-neutral-100" />
+                </div>
+              ))}
+            </div>
           ) : (
             <div className="rounded-xl bg-white px-6 py-14 text-center">
               <h2 className="text-h7 font-bold text-neutral-900">
-                {isLoading ? 'Memuat notifikasi…' : error ? 'Notifikasi belum dapat dimuat' : query.trim() ? 'Pesan tidak ditemukan' : 'Semua notifikasi sudah dibaca'}
+                {error ? 'Notifikasi belum dapat dimuat' : query.trim() ? 'Pesan tidak ditemukan' : 'Semua notifikasi sudah dibaca'}
               </h2>
               <p className="mt-2 text-body-2 text-neutral-500">
                 {error || (query.trim() ? 'Coba gunakan kata kunci lain.' : 'Pilih Semua untuk melihat kembali pesan anda.')}

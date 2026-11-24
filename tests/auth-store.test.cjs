@@ -122,7 +122,7 @@ test('failed credentials keep login retryable and do not expose an account', asy
 });
 test('successful login followed by unavailable me hides profile until retry', async () => {
   const { store, api } = setup({ getMe: async () => { throw new ApiRequestError('unavailable', 503); } });
-  await store.getState().login('test', 'test');
+  await assert.rejects(store.getState().login('test', 'test'));
   assert.equal(store.getState().status, 'error');
   assert.equal(store.getState().user, null);
   api.getMe = async () => ({ user });

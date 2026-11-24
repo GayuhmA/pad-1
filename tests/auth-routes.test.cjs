@@ -32,7 +32,21 @@ test('login reads Laravel envelope and sets a secure HttpOnly cookie without exp
   const response = await login(request('login', { username: ' test-warga ', password: 'test-password' }));
   assert.equal(response.status, 200);
   const body = await response.json();
-  assert.deepEqual(body, { user: { id: 12, username: 'test-warga', nama: 'Test Warga', role: 'Warga', phone: '081234567890', is_active: true } });
+  assert.deepEqual(body, {
+    user: {
+      id: 12,
+      username: 'test-warga',
+      nama: 'Test Warga',
+      role: 'Warga',
+      phone: '081234567890',
+      tempat_lahir: null,
+      tanggal_lahir: null,
+      alamat: null,
+      nomor_rt: null,
+      nomor_rw: null,
+      is_active: true,
+    },
+  });
   assert.ok(!JSON.stringify(body).includes('test-token'));
   const cookie = response.headers.get('set-cookie');
   for (const attribute of ['__Host-pad_session=', 'HttpOnly', 'Secure', 'SameSite=lax', 'Path=/']) assert.ok(cookie.includes(attribute));

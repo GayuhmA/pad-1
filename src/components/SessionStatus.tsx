@@ -8,16 +8,24 @@ import { useAuthStore } from '@/stores/auth-store';
 export function SessionStatus() {
   const { status, error, isChecking, fetchUser, logout } = useAuthStore();
   const pathname = usePathname();
+
   if (status !== 'error') {
-    // While the session is being checked, or an unauthenticated user is being
-    // redirected to login, avoid showing warga-specific page content.
-    const variant = pathname.startsWith('/dashboard') ? 'management'
-      : status === 'initializing' || status === 'unauthenticated' ? 'generic'
-      : pathname === '/' ? 'home'
-      : pathname.startsWith('/lomba') ? 'lomba'
-      : pathname.startsWith('/profile') ? 'profile'
+    const isDashboard = pathname.startsWith('/dashboard');
+    const variant = isDashboard
+      ? 'management'
+      : pathname === '/'
+      ? 'home'
+      : pathname.startsWith('/lomba')
+      ? 'lomba'
+      : pathname.startsWith('/pendaftaran')
+      ? 'pendaftaran'
+      : pathname.startsWith('/iuran')
+      ? 'iuran'
+      : pathname.startsWith('/profile')
+      ? 'profile'
       : 'generic';
-    return <PageSkeleton variant={variant} includeShell />;
+
+    return <PageSkeleton variant={variant} includeShell={!isDashboard} />;
   }
   return (
     <div className="flex min-h-[60vh] grow items-center justify-center bg-neutral-50 p-6">

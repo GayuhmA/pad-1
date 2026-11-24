@@ -27,8 +27,6 @@ export function Navbar() {
   const isProfilePage = pathname === '/profile';
   const { profile } = useResidentProfile();
 
-  if (!profile) return null;
-
   return (
     <header className="w-full bg-white flex justify-center sticky top-0 z-50">
       <nav className="w-full max-w-360 h-28 px-5 md:px-15 flex items-center">
@@ -81,25 +79,34 @@ export function Navbar() {
 
         {/* Right section */}
         <div className="flex-1 flex justify-end items-center gap-6">
-          <Link
-            href="/notifikasi"
-            onClick={closeMobileMenu}
-            aria-label={hasUnreadNotifications ? 'Notifikasi, ada pesan belum dibaca' : 'Notifikasi'}
-            aria-current={isNotificationPage ? 'page' : undefined}
-            className={`inline-flex size-12 shrink-0 items-center justify-center rounded-full transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600 ${isNotificationPage ? 'bg-primary-100 text-primary-600 hover:bg-primary-200' : 'text-neutral-400 hover:bg-neutral-100'}`}
-          >
-            <Icon name="notification" className="size-7" />
-          </Link>
-          <Link
-            href="/profile"
-            onClick={closeMobileMenu}
-            aria-label={`Profil ${profile.name}`}
-            title={`${profile.name} (@${profile.username})`}
-            aria-current={isProfilePage ? 'page' : undefined}
-            className={`inline-flex shrink-0 items-center rounded-full border-2 p-0.5 transition-colors hover:border-primary-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600 ${isProfilePage ? 'border-primary-300' : 'border-transparent'}`}
-          >
-            <Avatar name={profile.name} className="size-11 text-body-2" />
-          </Link>
+          {profile ? (
+            <>
+              <Link
+                href="/notifikasi"
+                onClick={closeMobileMenu}
+                aria-label={hasUnreadNotifications ? 'Notifikasi, ada pesan belum dibaca' : 'Notifikasi'}
+                aria-current={isNotificationPage ? 'page' : undefined}
+                className={`inline-flex size-12 shrink-0 items-center justify-center rounded-full transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600 ${isNotificationPage ? 'bg-primary-100 text-primary-600 hover:bg-primary-200' : 'text-neutral-400 hover:bg-neutral-100'}`}
+              >
+                <Icon name="notification" className="size-7" />
+              </Link>
+              <Link
+                href="/profile"
+                onClick={closeMobileMenu}
+                aria-label={`Profil ${profile.name}`}
+                title={`${profile.name} (@${profile.username})`}
+                aria-current={isProfilePage ? 'page' : undefined}
+                className={`inline-flex shrink-0 items-center rounded-full border-2 p-0.5 transition-colors hover:border-primary-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600 ${isProfilePage ? 'border-primary-300' : 'border-transparent'}`}
+              >
+                <Avatar name={profile.name} className="size-11 text-body-2" />
+              </Link>
+            </>
+          ) : (
+            <div className="flex items-center gap-4" aria-hidden="true">
+              <div className="size-10 rounded-full bg-neutral-100 animate-pulse" />
+              <div className="size-11 rounded-full bg-neutral-200 animate-pulse" />
+            </div>
+          )}
 
           {/* Hamburger (mobile) */}
           <button

@@ -9,6 +9,7 @@ import { ManagementDashboard } from '@/components/management/ManagementDashboard
 import { MessageManagement } from '@/components/management/MessageManagement';
 import { RegistrationManagement } from '@/components/management/RegistrationManagement';
 import { SessionStatus } from '@/components/SessionStatus';
+import { PageSkeleton } from '@/components/skeletons/PageSkeleton';
 import { useRequireManagementAuth } from '@/hooks/use-require-management-auth';
 import { getManagementRole, type ManagementRole } from '@/lib/management-role';
 import { useAuthStore } from '@/stores/auth-store';
@@ -31,8 +32,10 @@ function NoManagementAccess({ role }: { role: string }) {
 export function ManagementRoute({ page }: { page: 'dashboard' | 'competitions' | 'registrations' | 'dues' | 'messages' | 'documentation' | 'history' }) {
   const { isReady } = useRequireManagementAuth();
   const user = useAuthStore((state) => state.user);
+  const status = useAuthStore((state) => state.status);
 
-  if (!isReady || !user) return <SessionStatus />;
+  if (status === 'error' && !user) return <SessionStatus />;
+  if (!isReady || !user) return <PageSkeleton variant="management" />;
   const role: ManagementRole | null = getManagementRole(user.role);
   if (!role) return <NoManagementAccess role={user.role} />;
 
