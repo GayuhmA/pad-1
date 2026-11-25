@@ -97,7 +97,7 @@ export default function IuranPage() {
 
   // Form State
   const [selectedIuranId, setSelectedIuranId] = useState<number | null>(null);
-  const [namaKepalaKeluargaOverride, setNamaKepalaKeluargaOverride] = useState<string | null>(null);
+  const [namaKepalaKeluarga, setNamaKepalaKeluarga] = useState<string>("");
   const [nominalInput, setNominalInput] = useState<string>("");
   const [metodePembayaran, setMetodePembayaran] = useState("QRIS");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -213,7 +213,6 @@ export default function IuranPage() {
   }, [toastMessage]);
 
   const activeBills = useMemo(() => (user ? bills : []), [user, bills]);
-  const namaKepalaKeluarga = namaKepalaKeluargaOverride ?? user?.nama ?? "";
   const selectedBill = useMemo(
     () => activeBills.find((item) => item.id_iuran === selectedIuranId) ?? activeBills[0] ?? null,
     [activeBills, selectedIuranId],
@@ -295,6 +294,7 @@ export default function IuranPage() {
       });
       setPendingIds((current) => new Set(current).add(selectedBill.id_iuran));
       setToastMessage(response.message);
+      setNamaKepalaKeluarga("");
       setNominalInput("");
       clearFile();
       setRetryKey((k) => k + 1);
@@ -825,7 +825,7 @@ export default function IuranPage() {
                       id="nama-kepala-keluarga"
                       type="text"
                       value={namaKepalaKeluarga}
-                      onChange={(e) => setNamaKepalaKeluargaOverride(e.target.value)}
+                      onChange={(e) => setNamaKepalaKeluarga(e.target.value)}
                       placeholder="Masukkan Nama"
                       className="w-full h-11 bg-neutral-100 text-neutral-900 placeholder:text-neutral-400 rounded-xl px-4 text-xs md:text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary-500 transition-all"
                     />
