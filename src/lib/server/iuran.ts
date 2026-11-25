@@ -293,7 +293,7 @@ async function performRequest(endpoint: string, token: string | undefined, init:
       404: 'Tagihan iuran tidak ditemukan.',
       409: 'Pembayaran sebelumnya masih menunggu verifikasi panitia.',
       422: init.method === 'POST'
-        ? 'Pembayaran tidak valid. Pastikan nominal sesuai tagihan dan bukti bayar memenuhi ketentuan.'
+        ? 'Pembayaran tidak valid. Pastikan nominal dan bukti bayar memenuhi ketentuan.'
         : 'Filter iuran tidak valid.',
       429: 'Terlalu banyak permintaan. Tunggu sebentar sebelum mencoba lagi.',
     };
