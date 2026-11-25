@@ -819,7 +819,7 @@ export default function IuranPage() {
                   {/* Field 1: Nama Kepala Keluarga */}
                   <div className="flex flex-col gap-1">
                     <label htmlFor="nama-kepala-keluarga" className="text-xs font-bold text-neutral-800">
-                      Nama Kepala Keluarga
+                      Nama Lengkap
                     </label>
                     <input
                       id="nama-kepala-keluarga"
