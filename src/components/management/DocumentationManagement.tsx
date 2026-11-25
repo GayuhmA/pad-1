@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   DashboardDocumentationSkeleton,
@@ -14,6 +15,8 @@ import {
   getAlbumDetail,
   getAlbums,
   uploadMedia,
+  updateAlbum,
+  updateAlbumWithCover,
 } from '@/lib/api/dokumentasi';
 import type { AlbumDokumentasi, DetailAlbumDokumentasi } from '@/types/management-dokumentasi';
 
@@ -90,6 +93,14 @@ function AlbumPreview({
   const [mediaFile, setMediaFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+
+  // Album edit state
+  const [editOpen, setEditOpen] = useState(false);
+  const [namaAlbum, setNamaAlbum] = useState(album.nama_album);
+  const [tanggalAlbum, setTanggalAlbum] = useState(album.tanggal_album.slice(0, 10));
+  const [coverFile, setCoverFile] = useState<File | null>(null);
+  const [isSavingAlbum, setIsSavingAlbum] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   // Delete state
   const [isDeletingAlbum, setIsDeletingAlbum] = useState(false);
@@ -191,21 +202,94 @@ function AlbumPreview({
     }
   }
 
+  function openEditAlbum() {
+    const currentAlbum = detail ?? album;
+    setNamaAlbum(currentAlbum.nama_album);
+    setTanggalAlbum(currentAlbum.tanggal_album.slice(0, 10));
+    setCoverFile(null);
+    setEditError(null);
+    setEditOpen(true);
+  }
+
+  async function handleUpdateAlbum(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const trimmedName = namaAlbum.trim();
+    if (!trimmedName) {
+      setEditError('Nama album wajib diisi.');
+      return;
+    }
+    if (!tanggalAlbum) {
+      setEditError('Tanggal kegiatan wajib diisi.');
+      return;
+    }
+
+    setIsSavingAlbum(true);
+    setEditError(null);
+    try {
+      const currentAlbum = detail ?? album;
+      const payload = {
+        nama_album: trimmedName,
+        tanggal_album: tanggalAlbum,
+        ...(currentAlbum.periode?.id_periode
+          ? { id_periode: currentAlbum.periode.id_periode }
+          : {}),
+        ...(currentAlbum.lomba?.id_lomba
+          ? { id_lomba: currentAlbum.lomba.id_lomba }
+          : {}),
+      };
+
+      let response: Awaited<ReturnType<typeof updateAlbum>>;
+      if (coverFile) {
+        const formData = new FormData();
+        formData.append('nama_album', payload.nama_album);
+        formData.append('tanggal_album', payload.tanggal_album);
+        if (payload.id_periode) formData.append('id_periode', String(payload.id_periode));
+        if (payload.id_lomba) formData.append('id_lomba', String(payload.id_lomba));
+        formData.append('cover', coverFile);
+        response = await updateAlbumWithCover(album.id_album, formData);
+      } else {
+        response = await updateAlbum(album.id_album, payload);
+      }
+
+      setDetail({ ...response.data, media: detail?.media ?? [] });
+      setEditOpen(false);
+      setCoverFile(null);
+      onMediaUpdated();
+    } catch (err: unknown) {
+      setEditError(err instanceof Error ? err.message : 'Gagal memperbarui album.');
+    } finally {
+      setIsSavingAlbum(false);
+    }
+  }
+
   const accent = accents[album.id_album % accents.length];
   const mediaList = detail?.media ?? [];
+  const displayAlbum = detail ?? album;
 
   return (
     <Modal isOpen onClose={onClose} ariaLabel={`Album ${album.nama_album}`}>
       <div className="flex flex-col gap-4 border-b border-neutral-100 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-7">
         <div>
-          <p className="text-sm text-neutral-500">Dokumentasi · {formatDate(album.tanggal_album)}</p>
-          <h2 className="mt-1 text-xl font-semibold text-neutral-900">{album.nama_album}</h2>
+          <p className="text-sm text-neutral-500">Dokumentasi · {formatDate(displayAlbum.tanggal_album)}</p>
+          <h2 className="mt-1 text-xl font-semibold text-neutral-900">{displayAlbum.nama_album}</h2>
           <p className="mt-1 text-sm text-neutral-500">
             {detail ? `${detail.jumlah_foto} foto · ${detail.jumlah_video} video` : `${album.jumlah_foto} foto · ${album.jumlah_video} video`}
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={openEditAlbum}
+            className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-neutral-200 bg-white px-4 text-xs font-semibold text-neutral-700 transition hover:border-primary-200 hover:bg-primary-50 hover:text-primary-700"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4">
+              <path d="M12 20h9" />
+              <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z" />
+            </svg>
+            <span>Edit Album</span>
+          </button>
+
           <button
             type="button"
             onClick={() => setUploadOpen(true)}
@@ -240,6 +324,91 @@ function AlbumPreview({
           </button>
         </div>
       </div>
+
+      {editOpen && (
+        <form onSubmit={handleUpdateAlbum} className="border-b border-neutral-100 bg-neutral-50/70 p-5 sm:p-7">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold text-neutral-800">Edit informasi album</h3>
+              <p className="mt-1 text-xs text-neutral-500">Perbarui nama, tanggal kegiatan, atau cover album.</p>
+            </div>
+            {displayAlbum.cover && (
+              <Image
+                src={displayAlbum.cover}
+                alt="Cover album saat ini"
+                width={64}
+                height={64}
+                unoptimized
+                className="size-16 rounded-lg border border-neutral-200 object-cover"
+              />
+            )}
+          </div>
+
+          {editError && (
+            <p role="alert" className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-xs font-medium text-red-700">
+              {editError}
+            </p>
+          )}
+
+          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <label className="block space-y-1.5">
+              <span className="text-xs font-medium text-neutral-600">Nama Album <span className="text-red-500">*</span></span>
+              <input
+                type="text"
+                required
+                maxLength={255}
+                value={namaAlbum}
+                onChange={(event) => setNamaAlbum(event.target.value)}
+                className="h-10 w-full rounded-xl border border-neutral-200 bg-white px-3 text-sm text-neutral-800 outline-none focus:border-primary-400"
+              />
+            </label>
+
+            <label className="block space-y-1.5">
+              <span className="text-xs font-medium text-neutral-600">Tanggal Kegiatan <span className="text-red-500">*</span></span>
+              <input
+                type="date"
+                required
+                value={tanggalAlbum}
+                onChange={(event) => setTanggalAlbum(event.target.value)}
+                className="h-10 w-full rounded-xl border border-neutral-200 bg-white px-3 text-sm text-neutral-800 outline-none focus:border-primary-400"
+              />
+            </label>
+
+            <label className="block space-y-1.5 sm:col-span-2">
+              <span className="text-xs font-medium text-neutral-600">Ganti Cover (Opsional)</span>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(event) => setCoverFile(event.target.files?.[0] ?? null)}
+                className="block min-h-10 w-full rounded-xl border border-neutral-200 bg-white px-2 py-2 text-xs text-neutral-800 file:mr-2 file:rounded-lg file:border-0 file:bg-primary-50 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-primary-600"
+              />
+              <span className="block text-xs text-neutral-500">Tanpa memilih file, cover saat ini tetap digunakan.</span>
+            </label>
+          </div>
+
+          <div className="mt-4 flex justify-end gap-2">
+            <button
+              type="button"
+              disabled={isSavingAlbum}
+              onClick={() => {
+                setEditOpen(false);
+                setCoverFile(null);
+                setEditError(null);
+              }}
+              className="min-h-9 rounded-xl border border-neutral-200 px-3.5 text-xs font-semibold text-neutral-600 hover:bg-white disabled:opacity-50"
+            >
+              Batal
+            </button>
+            <button
+              type="submit"
+              disabled={isSavingAlbum}
+              className="min-h-9 rounded-xl bg-primary-600 px-4 text-xs font-semibold text-white hover:bg-primary-700 disabled:cursor-wait disabled:opacity-50"
+            >
+              {isSavingAlbum ? 'Menyimpan...' : 'Simpan Perubahan'}
+            </button>
+          </div>
+        </form>
+      )}
 
       {uploadOpen && (
         <form onSubmit={handleUploadMedia} className="border-b border-neutral-100 bg-neutral-50/70 p-5 sm:p-7">

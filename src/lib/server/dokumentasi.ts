@@ -5,7 +5,6 @@ import type {
   AlbumDokumentasi,
   CreateAlbumResponse,
   DeleteResponse,
-  DetailAlbumDokumentasi,
   DetailAlbumResponse,
   DokumentasiListResponse,
   MediaDokumentasi,
@@ -207,6 +206,28 @@ export async function backendUpdateAlbum(
     data: {
       ...mapAlbumItem(env.data),
       media: [],
+    },
+  };
+}
+
+export async function backendUpdateAlbumWithCover(
+  token: string,
+  idAlbum: number,
+  formData: FormData,
+): Promise<DetailAlbumResponse> {
+  formData.set('_method', 'PUT');
+  const raw = await performRequest(`/api/dokumentasi/${idAlbum}`, token, {
+    method: 'POST',
+    body: formData,
+  });
+  const env = readEnvelope(raw, 'perbarui album dokumentasi');
+  const data = record(env.data);
+  return {
+    success: true,
+    message: text(env.message),
+    data: {
+      ...mapAlbumItem(data),
+      media: Array.isArray(data.media) ? data.media.map(mapMediaItem) : [],
     },
   };
 }

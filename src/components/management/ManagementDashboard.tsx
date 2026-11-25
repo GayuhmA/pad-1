@@ -249,17 +249,32 @@ function AgendaPanel({ agenda, tanggal, onDateChange }: { agenda: DashboardAgend
   const tomorrow = addIsoDays(today, 1);
   const displayedDate = tanggal || today;
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [activeDateMode, setActiveDateMode] = useState<'today' | 'tomorrow' | 'custom' | null>(null);
   const customDateRef = useRef<HTMLInputElement>(null);
-  const selectedTab = displayedDate === today ? 'today' : displayedDate === tomorrow ? 'tomorrow' : 'custom';
+  const selectedTab = activeDateMode ?? (displayedDate === today
+      ? 'today'
+      : displayedDate === tomorrow
+        ? 'tomorrow'
+        : 'custom');
   const formattedCustomDate = new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'short', timeZone: 'Asia/Jakarta' }).format(new Date(`${displayedDate}T12:00:00+07:00`));
+
+  function openDatePicker() {
+    setActiveDateMode('custom');
+    setShowDatePicker(true);
+  }
+
+  useEffect(() => {
+    if (showDatePicker) customDateRef.current?.focus();
+  }, [showDatePicker]);
+
   return (
     <section className="rounded-2xl border border-primary-100/90 bg-white p-5 shadow-[0_3px_16px_rgba(34,24,24,0.025)] sm:p-6">
-      <SectionHeading title="Jadwal dan Agenda" action="Semua agenda" onAction={() => { setShowDatePicker(true); customDateRef.current?.focus(); }} />
-      {showDatePicker && <label className="mb-4 flex items-center gap-2 text-sm text-neutral-600"><Icon name="calendar" className="size-4 text-neutral-400" /><span>Pilih tanggal</span><input ref={customDateRef} type="date" value={displayedDate} onChange={(event) => { if (event.target.value) onDateChange(event.target.value); }} className="ml-auto h-9 rounded-lg border border-neutral-200 bg-white px-2 text-xs outline-none focus:border-primary-400" /></label>}
-      <div role="tablist" aria-label="Pilih hari agenda" className="mb-5 grid grid-cols-3 rounded-xl bg-neutral-50 p-1">
-        <button type="button" role="tab" aria-selected={selectedTab === 'today'} onClick={() => onDateChange(today)} className={`min-h-10 rounded-lg px-2 text-xs font-semibold transition-colors sm:text-sm ${selectedTab === 'today' ? 'bg-[#FBD0CC] text-neutral-900 shadow-sm' : 'text-neutral-500 hover:text-neutral-900'}`}>Hari Ini</button>
-        <button type="button" role="tab" aria-selected={selectedTab === 'tomorrow'} onClick={() => onDateChange(tomorrow)} className={`min-h-10 rounded-lg px-2 text-xs font-semibold transition-colors sm:text-sm ${selectedTab === 'tomorrow' ? 'bg-[#FBD0CC] text-neutral-900 shadow-sm' : 'text-neutral-500 hover:text-neutral-900'}`}>Besok</button>
-        <button type="button" role="tab" aria-selected={selectedTab === 'custom'} onClick={() => { setShowDatePicker(true); customDateRef.current?.focus(); }} className={`min-h-10 rounded-lg px-2 text-xs font-semibold transition-colors sm:text-sm ${selectedTab === 'custom' ? 'bg-[#FBD0CC] text-neutral-900 shadow-sm' : 'text-neutral-500 hover:text-neutral-900'}`}>{selectedTab === 'custom' ? formattedCustomDate : 'Pilih Tanggal'}</button>
+      <SectionHeading title="Jadwal dan Agenda" action="Semua agenda" onAction={openDatePicker} />
+      {showDatePicker && <label className="mb-4 flex items-center gap-2 text-sm text-neutral-600"><Icon name="calendar" className="size-4 text-neutral-400" /><span>Pilih tanggal</span><input ref={customDateRef} type="date" value={displayedDate} onChange={(event) => { if (event.target.value) { setActiveDateMode('custom'); setShowDatePicker(false); onDateChange(event.target.value); } }} className="ml-auto h-9 rounded-lg border border-neutral-200 bg-white px-2 text-xs outline-none focus:border-primary-400" /></label>}
+      <div role="group" aria-label="Filter tanggal agenda" className="mb-5 grid grid-cols-3 rounded-xl bg-neutral-50 p-1">
+        <button type="button" aria-pressed={selectedTab === 'today'} onClick={() => { setActiveDateMode('today'); setShowDatePicker(false); onDateChange(today); }} className={`min-h-10 rounded-lg px-2 text-xs font-semibold transition-colors sm:text-sm ${selectedTab === 'today' ? 'bg-[#FBD0CC] text-neutral-900 shadow-sm' : 'text-neutral-500 hover:text-neutral-900'}`}>Hari Ini</button>
+        <button type="button" aria-pressed={selectedTab === 'tomorrow'} onClick={() => { setActiveDateMode('tomorrow'); setShowDatePicker(false); onDateChange(tomorrow); }} className={`min-h-10 rounded-lg px-2 text-xs font-semibold transition-colors sm:text-sm ${selectedTab === 'tomorrow' ? 'bg-[#FBD0CC] text-neutral-900 shadow-sm' : 'text-neutral-500 hover:text-neutral-900'}`}>Besok</button>
+        <button type="button" aria-pressed={selectedTab === 'custom'} onClick={openDatePicker} className={`min-h-10 rounded-lg px-2 text-xs font-semibold transition-colors sm:text-sm ${selectedTab === 'custom' ? 'bg-[#FBD0CC] text-neutral-900 shadow-sm' : 'text-neutral-500 hover:text-neutral-900'}`}>{selectedTab === 'custom' && !showDatePicker ? formattedCustomDate : 'Pilih Tanggal'}</button>
       </div>
       {agenda.length === 0 ? <p className="py-6 text-center text-sm text-neutral-500">Tidak ada agenda pada tanggal ini.</p> : <ol className="divide-y divide-neutral-100">
         {agenda.map((item) => <li key={item.id_jadwal} className="grid grid-cols-[58px_1fr] gap-4 py-4 first:pt-2 last:pb-1 sm:grid-cols-[76px_1fr] sm:gap-5">

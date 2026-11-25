@@ -50,6 +50,13 @@ export interface CreateAlbumResponse {
   data: AlbumDokumentasi;
 }
 
+export interface UpdateAlbumInput {
+  nama_album: string;
+  tanggal_album: string;
+  id_periode?: number;
+  id_lomba?: number;
+}
+
 export interface UploadMediaResponse {
   success: boolean;
   message: string;

@@ -5,6 +5,7 @@ import type {
   DetailAlbumResponse,
   DokumentasiListResponse,
   UploadMediaResponse,
+  UpdateAlbumInput,
 } from '@/types/management-dokumentasi';
 
 export function getAlbums(
@@ -36,11 +37,23 @@ export function getAlbumDetail(idAlbum: number, signal?: AbortSignal) {
   return apiRequest<DetailAlbumResponse>(`/api/dokumentasi/${encodeURIComponent(idAlbum)}`, { signal });
 }
 
-export function updateAlbum(idAlbum: number, body: unknown) {
+export function updateAlbum(idAlbum: number, body: UpdateAlbumInput) {
   return apiRequest<DetailAlbumResponse>(`/api/dokumentasi/${encodeURIComponent(idAlbum)}`, {
     method: 'PUT',
     body,
   });
+}
+
+export async function updateAlbumWithCover(idAlbum: number, formData: FormData) {
+  const response = await fetch(`/api/dokumentasi/${encodeURIComponent(idAlbum)}`, {
+    method: 'POST',
+    body: formData,
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.message || 'Gagal memperbarui album dokumentasi.');
+  }
+  return data as DetailAlbumResponse;
 }
 
 export function deleteAlbum(idAlbum: number) {

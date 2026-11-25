@@ -4,6 +4,7 @@ import {
   backendDeleteAlbum,
   backendGetAlbumDetail,
   backendUpdateAlbum,
+  backendUpdateAlbumWithCover,
   DokumentasiError,
 } from '@/lib/server/dokumentasi';
 
@@ -53,6 +54,45 @@ export async function PUT(
 
     const body = await request.json();
     return sessionResponse(await backendUpdateAlbum(token, idAlbum, body));
+  } catch (error) {
+    if (error instanceof DokumentasiError) {
+      return sessionResponse(
+        { message: error.message, ...(error.errors ? { errors: error.errors } : {}) },
+        error.status,
+      );
+    }
+    return sessionResponse(
+      { message: 'Gagal memperbarui album dokumentasi. Silakan coba lagi.' },
+      500,
+    );
+  }
+}
+
+export async function POST(
+  request: NextRequest,
+  context: { params: Promise<{ id: string }> },
+) {
+  try {
+    requireSameOrigin(request);
+    const token = request.cookies.get(SESSION_COOKIE)?.value;
+    if (!token) throw new DokumentasiError(401, 'Silakan masuk untuk melanjutkan.');
+
+    const { id } = await context.params;
+    const idAlbum = Number(id);
+    if (!Number.isSafeInteger(idAlbum) || idAlbum <= 0) {
+      throw new DokumentasiError(400, 'ID album tidak valid.');
+    }
+
+    const formData = await request.formData();
+    const cover = formData.get('cover');
+    if (!(cover instanceof File)) {
+      throw new DokumentasiError(422, 'Pilih file cover terlebih dahulu.');
+    }
+    if (cover.size === 0 || !cover.type.startsWith('image/')) {
+      throw new DokumentasiError(422, 'File cover harus berupa gambar yang valid.');
+    }
+
+    return sessionResponse(await backendUpdateAlbumWithCover(token, idAlbum, formData));
   } catch (error) {
     if (error instanceof DokumentasiError) {
       return sessionResponse(
