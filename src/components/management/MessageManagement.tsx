@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { DashboardMessageSkeleton } from '@/components/management/DashboardLoadingSkeleton';
 import { Icon, ManagementLayout } from '@/components/management/ManagementDashboard';
 import { Modal } from '@/components/Modal';
 
@@ -131,10 +132,10 @@ function MessageComposer({
 }
 
 export function MessageManagement({ role, userName }: { role: 'admin' | 'panitia'; userName: string }) {
-  const [messages, setMessages] = useState<MessageItem[]>(seedMessages);
+  const [messages, setMessages] = useState<MessageItem[]>([]);
   const [filter, setFilter] = useState<MessageFilter>('all');
   const [query, setQuery] = useState('');
-  const [selectedId, setSelectedId] = useState<string | null>(seedMessages[0]?.id ?? null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [composerOpen, setComposerOpen] = useState(false);
   const [editingDraft, setEditingDraft] = useState<MessageItem | null>(null);
   const [notice, setNotice] = useState('');
@@ -158,10 +159,17 @@ export function MessageManagement({ role, userName }: { role: 'admin' | 'panitia
             setMessages(sorted);
             setSelectedId(sorted[0]?.id ?? null);
           } else {
+            setMessages(seedMessages);
+            setSelectedId(seedMessages[0]?.id ?? null);
             setStorageWarning('Data pesan lokal tidak terbaca. Daftar contoh digunakan sementara.');
           }
+        } else {
+          setMessages(seedMessages);
+          setSelectedId(seedMessages[0]?.id ?? null);
         }
       } catch {
+        setMessages(seedMessages);
+        setSelectedId(seedMessages[0]?.id ?? null);
         setStorageWarning('Penyimpanan browser tidak tersedia. Perubahan hanya tersimpan selama halaman dibuka.');
       } finally {
         setStorageReady(true);
@@ -245,43 +253,49 @@ export function MessageManagement({ role, userName }: { role: 'admin' | 'panitia
           <button type="button" onClick={() => openComposer()} className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-primary-600 px-5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"><span aria-hidden="true" className="text-xl leading-none">+</span>Tulis Pesan</button>
         </div>
 
-        <div role="group" aria-label="Filter status pesan" className="flex flex-wrap gap-2 rounded-xl border border-primary-100 bg-white p-3 sm:p-4">
-          {filters.map((item) => <button key={item.id} type="button" aria-pressed={filter === item.id} onClick={() => setFilter(item.id)} className={`inline-flex min-h-10 items-center gap-2 rounded-xl border px-4 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600 ${filter === item.id ? 'border-primary-100 bg-[#FFE5E2] text-primary-700' : 'border-neutral-200 bg-white text-neutral-500 hover:border-primary-100 hover:text-primary-700'}`}>{item.label}<span className={`text-xs ${filter === item.id ? 'text-primary-600' : 'text-neutral-400'}`}>{item.count}</span></button>)}
-        </div>
-
-        {notice && <p role="status" className="rounded-xl border border-success-100 bg-success-10 px-4 py-3 text-sm font-medium text-success-200">{notice}</p>}
-        {storageWarning && <p role="status" className="rounded-xl border border-secondary-200 bg-secondary-100/40 px-4 py-3 text-sm text-secondary-700">{storageWarning}</p>}
-
-        <section aria-label="Riwayat pesan" className="grid min-h-[min(68vh,760px)] gap-5 lg:grid-cols-[minmax(300px,0.82fr)_minmax(0,1.3fr)]">
-          <div className="flex min-h-[560px] flex-col overflow-hidden rounded-xl border border-primary-100 bg-white">
-            <div className="border-b border-primary-100 p-4 sm:p-5">
-              <label htmlFor="message-search" className="sr-only">Cari riwayat pesan</label>
-              <div className="relative"><Icon name="search" className="pointer-events-none absolute top-1/2 left-3.5 size-5 -translate-y-1/2 text-neutral-400" /><input id="message-search" type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Cari riwayat pesan" className="h-11 w-full rounded-xl border border-neutral-200 bg-white pr-4 pl-11 text-sm text-neutral-800 placeholder:text-neutral-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600" /></div>
+        {!storageReady ? (
+          <DashboardMessageSkeleton />
+        ) : (
+          <>
+            <div role="group" aria-label="Filter status pesan" className="flex flex-wrap gap-2 rounded-xl border border-primary-100 bg-white p-3 sm:p-4">
+              {filters.map((item) => <button key={item.id} type="button" aria-pressed={filter === item.id} onClick={() => setFilter(item.id)} className={`inline-flex min-h-10 items-center gap-2 rounded-xl border px-4 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600 ${filter === item.id ? 'border-primary-100 bg-[#FFE5E2] text-primary-700' : 'border-neutral-200 bg-white text-neutral-500 hover:border-primary-100 hover:text-primary-700'}`}>{item.label}<span className={`text-xs ${filter === item.id ? 'text-primary-600' : 'text-neutral-400'}`}>{item.count}</span></button>)}
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto">
-              {visibleMessages.length ? <ul className="divide-y divide-primary-100">
-                {visibleMessages.map((message) => {
-                  const active = selectedMessage?.id === message.id;
-                  return <li key={message.id}><button type="button" aria-pressed={active} onClick={() => setSelectedId(message.id)} className={`w-full px-5 py-4 text-left transition-colors focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-primary-600 sm:px-6 ${active ? 'bg-neutral-50' : 'hover:bg-neutral-50/70'}`}>
-                    <span className="mb-2 block text-right text-xs text-neutral-400">{formatAge(message.updatedAt, now)}</span>
-                    <span className="block truncate text-[16px] font-semibold text-neutral-900">{message.subject}</span>
-                    <span className="mt-2 block line-clamp-3 text-sm leading-6 text-neutral-500">{message.body || 'Belum ada isi pesan.'}</span>
-                    <span className={`mt-2 block text-xs font-medium ${message.status === 'sent' ? 'text-neutral-400' : 'text-secondary-700'}`}>{message.status === 'sent' ? 'Terkirim' : 'Draft'}</span>
-                  </button></li>;
-                })}
-              </ul> : <div className="px-6 py-16 text-center"><h2 className="font-semibold text-neutral-800">{query ? 'Pesan tidak ditemukan' : 'Belum ada pesan'}</h2><p className="mt-2 text-sm leading-6 text-neutral-500">{query ? 'Coba kata kunci lain.' : 'Pesan yang sesuai filter akan muncul di sini.'}</p></div>}
-            </div>
-          </div>
 
-          <article aria-label={selectedMessage ? `Isi pesan: ${selectedMessage.subject}` : 'Detail pesan'} className="flex min-h-[560px] flex-col overflow-hidden rounded-xl border border-primary-100 bg-white">
-            {selectedMessage ? <>
-              <div className="flex flex-wrap items-center justify-between gap-2 px-5 pt-5 text-xs text-neutral-400 sm:px-7 sm:pt-7"><time dateTime={selectedMessage.updatedAt}>{formatDate(selectedMessage.updatedAt)}</time><span>{formatAge(selectedMessage.updatedAt, now)}</span></div>
-              <div className="mx-5 mt-4 border-b border-neutral-200 pb-4 text-center sm:mx-7"><h2 className="text-lg font-semibold leading-7 text-neutral-900 sm:text-xl">{selectedMessage.subject}</h2></div>
-              <div className="min-h-0 flex-1 overflow-y-auto whitespace-pre-wrap px-5 py-5 text-sm leading-7 text-neutral-600 sm:px-7 sm:py-6 sm:text-base">{selectedMessage.body || <span className="italic text-neutral-400">Draft ini belum memiliki isi pesan.</span>}</div>
-              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-neutral-100 px-5 py-4 sm:px-7"><span className={`text-xs font-medium ${selectedMessage.status === 'sent' ? 'text-neutral-400' : 'text-secondary-700'}`}>{selectedMessage.status === 'sent' ? 'Terkirim' : 'Draft'}</span>{selectedMessage.status === 'draft' && <div className="flex gap-2"><button type="button" onClick={() => openComposer(selectedMessage)} className="min-h-10 rounded-lg border border-neutral-200 px-3 text-sm font-semibold text-neutral-700 hover:bg-neutral-50">Edit Draft</button><button type="button" onClick={() => deleteDraft(selectedMessage)} className="min-h-10 rounded-lg px-3 text-sm font-semibold text-error-100 hover:bg-error-10">Hapus</button></div>}</div>
-            </> : <div className="m-auto px-6 py-16 text-center"><span className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-neutral-50 text-neutral-400"><Icon name="mail" className="size-6" /></span><h2 className="mt-4 font-semibold text-neutral-800">Pilih pesan untuk dibaca</h2><p className="mt-2 text-sm text-neutral-500">Atau tulis pesan baru untuk warga.</p><button type="button" onClick={() => openComposer()} className="mt-5 min-h-10 rounded-xl bg-primary-600 px-4 text-sm font-semibold text-white hover:bg-primary-700">Tulis Pesan</button></div>}
-          </article>
-        </section>
+            {notice && <p role="status" className="rounded-xl border border-success-100 bg-success-10 px-4 py-3 text-sm font-medium text-success-200">{notice}</p>}
+            {storageWarning && <p role="status" className="rounded-xl border border-secondary-200 bg-secondary-100/40 px-4 py-3 text-sm text-secondary-700">{storageWarning}</p>}
+
+            <section aria-label="Riwayat pesan" className="grid min-h-[min(68vh,760px)] gap-5 lg:grid-cols-[minmax(300px,0.82fr)_minmax(0,1.3fr)]">
+              <div className="flex min-h-[560px] flex-col overflow-hidden rounded-xl border border-primary-100 bg-white">
+                <div className="border-b border-primary-100 p-4 sm:p-5">
+                  <label htmlFor="message-search" className="sr-only">Cari riwayat pesan</label>
+                  <div className="relative"><Icon name="search" className="pointer-events-none absolute top-1/2 left-3.5 size-5 -translate-y-1/2 text-neutral-400" /><input id="message-search" type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Cari riwayat pesan" className="h-11 w-full rounded-xl border border-neutral-200 bg-white pr-4 pl-11 text-sm text-neutral-800 placeholder:text-neutral-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600" /></div>
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto">
+                  {visibleMessages.length ? <ul className="divide-y divide-primary-100">
+                    {visibleMessages.map((message) => {
+                      const active = selectedMessage?.id === message.id;
+                      return <li key={message.id}><button type="button" aria-pressed={active} onClick={() => setSelectedId(message.id)} className={`w-full px-5 py-4 text-left transition-colors focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-primary-600 sm:px-6 ${active ? 'bg-neutral-50' : 'hover:bg-neutral-50/70'}`}>
+                        <span className="mb-2 block text-right text-xs text-neutral-400">{formatAge(message.updatedAt, now)}</span>
+                        <span className="block truncate text-[16px] font-semibold text-neutral-900">{message.subject}</span>
+                        <span className="mt-2 block line-clamp-3 text-sm leading-6 text-neutral-500">{message.body || 'Belum ada isi pesan.'}</span>
+                        <span className={`mt-2 block text-xs font-medium ${message.status === 'sent' ? 'text-neutral-400' : 'text-secondary-700'}`}>{message.status === 'sent' ? 'Terkirim' : 'Draft'}</span>
+                      </button></li>;
+                    })}
+                  </ul> : <div className="px-6 py-16 text-center"><h2 className="font-semibold text-neutral-800">{query ? 'Pesan tidak ditemukan' : 'Belum ada pesan'}</h2><p className="mt-2 text-sm leading-6 text-neutral-500">{query ? 'Coba kata kunci lain.' : 'Pesan yang sesuai filter akan muncul di sini.'}</p></div>}
+                </div>
+              </div>
+
+              <article aria-label={selectedMessage ? `Isi pesan: ${selectedMessage.subject}` : 'Detail pesan'} className="flex min-h-[560px] flex-col overflow-hidden rounded-xl border border-primary-100 bg-white">
+                {selectedMessage ? <>
+                  <div className="flex flex-wrap items-center justify-between gap-2 px-5 pt-5 text-xs text-neutral-400 sm:px-7 sm:pt-7"><time dateTime={selectedMessage.updatedAt}>{formatDate(selectedMessage.updatedAt)}</time><span>{formatAge(selectedMessage.updatedAt, now)}</span></div>
+                  <div className="mx-5 mt-4 border-b border-neutral-200 pb-4 text-center sm:mx-7"><h2 className="text-lg font-semibold leading-7 text-neutral-900 sm:text-xl">{selectedMessage.subject}</h2></div>
+                  <div className="min-h-0 flex-1 overflow-y-auto whitespace-pre-wrap px-5 py-5 text-sm leading-7 text-neutral-600 sm:px-7 sm:py-6 sm:text-base">{selectedMessage.body || <span className="italic text-neutral-400">Draft ini belum memiliki isi pesan.</span>}</div>
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-t border-neutral-100 px-5 py-4 sm:px-7"><span className={`text-xs font-medium ${selectedMessage.status === 'sent' ? 'text-neutral-400' : 'text-secondary-700'}`}>{selectedMessage.status === 'sent' ? 'Terkirim' : 'Draft'}</span>{selectedMessage.status === 'draft' && <div className="flex gap-2"><button type="button" onClick={() => openComposer(selectedMessage)} className="min-h-10 rounded-lg border border-neutral-200 px-3 text-sm font-semibold text-neutral-700 hover:bg-neutral-50">Edit Draft</button><button type="button" onClick={() => deleteDraft(selectedMessage)} className="min-h-10 rounded-lg px-3 text-sm font-semibold text-error-100 hover:bg-error-10">Hapus</button></div>}</div>
+                </> : <div className="m-auto px-6 py-16 text-center"><span className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-neutral-50 text-neutral-400"><Icon name="mail" className="size-6" /></span><h2 className="mt-4 font-semibold text-neutral-800">Pilih pesan untuk dibaca</h2><p className="mt-2 text-sm text-neutral-500">Atau tulis pesan baru untuk warga.</p><button type="button" onClick={() => openComposer()} className="mt-5 min-h-10 rounded-xl bg-primary-600 px-4 text-sm font-semibold text-white hover:bg-primary-700">Tulis Pesan</button></div>}
+              </article>
+            </section>
+          </>
+        )}
       </div>
 
       {composerOpen && <MessageComposer initialMessage={editingDraft} onClose={closeComposer} onSave={(subject, body) => saveMessage(subject, body, 'draft')} onSend={(subject, body) => saveMessage(subject, body, 'sent')} />}

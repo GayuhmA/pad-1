@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/stores/auth-store';
+import { DashboardOverviewSkeleton } from '@/components/management/DashboardLoadingSkeleton';
 import { createMatch, getManagementDashboard, getMatchOptions } from '@/lib/api/management-dashboard';
 import { ApiRequestError } from '@/lib/api/client';
 import { Modal } from '@/components/Modal';
@@ -48,7 +49,17 @@ export function Icon({ name, className = 'size-5' }: { name: IconName; className
   );
 }
 
-type NavigationKey = 'dashboard' | 'competitions' | 'registrations' | 'dues' | 'messages' | 'documentation' | 'history' | null;
+type NavigationKey =
+  | 'dashboard'
+  | 'competitions'
+  | 'registrations'
+  | 'dues'
+  | 'warga'
+  | 'panitia'
+  | 'messages'
+  | 'documentation'
+  | 'history'
+  | null;
 
 const navigation: Record<Role, { label: string; groups: { title: string; items: { label: string; icon: IconName; key: NavigationKey }[] }[] }> = {
   panitia: {
@@ -71,7 +82,7 @@ const navigation: Record<Role, { label: string; groups: { title: string; items: 
         { label: 'Kelola Pendaftaran', icon: 'users', key: 'registrations' }, { label: 'Kelola Iuran', icon: 'wallet', key: 'dues' },
       ] },
       { title: 'KHUSUS ADMIN', items: [
-        { label: 'Kelola Warga', icon: 'users', key: null }, { label: 'Kelola Panitia', icon: 'shield', key: null },
+        { label: 'Kelola Warga', icon: 'users', key: 'warga' }, { label: 'Kelola Panitia', icon: 'shield', key: 'panitia' },
       ] },
       { title: 'LAINNYA', items: [
         { label: 'Pesan', icon: 'mail', key: 'messages' }, { label: 'Dokumentasi', icon: 'image', key: 'documentation' }, { label: 'Histori', icon: 'clock', key: 'history' },
@@ -141,7 +152,25 @@ function Sidebar({ role, userName, activeItem, onClose }: { role: Role; userName
                     <span>{item.label}</span>
                 </>;
                 const itemClass = `group flex min-h-12 w-full items-center gap-3 rounded-xl px-3.5 text-left text-[14px] font-semibold transition-colors ${active ? 'bg-[#FFE0DD] text-primary-700' : 'text-neutral-700'}`;
-                const href = item.key === 'dashboard' ? '/dashboard' : item.key === 'competitions' ? '/dashboard/lomba' : item.key === 'registrations' ? '/dashboard/pendaftaran' : item.key === 'dues' ? '/dashboard/iuran' : item.key === 'messages' ? '/dashboard/pesan' : item.key === 'documentation' ? '/dashboard/dokumentasi' : item.key === 'history' ? '/dashboard/histori' : null;
+                const href = item.key === 'dashboard'
+                  ? '/dashboard'
+                  : item.key === 'competitions'
+                    ? '/dashboard/lomba'
+                    : item.key === 'registrations'
+                      ? '/dashboard/pendaftaran'
+                      : item.key === 'dues'
+                        ? '/dashboard/iuran'
+                        : item.key === 'warga'
+                          ? '/dashboard/warga'
+                          : item.key === 'panitia'
+                            ? '/dashboard/panitia'
+                            : item.key === 'messages'
+                              ? '/dashboard/pesan'
+                              : item.key === 'documentation'
+                                ? '/dashboard/dokumentasi'
+                                : item.key === 'history'
+                                  ? '/dashboard/histori'
+                                  : null;
                 return <li key={item.label}>
                   {href
                     ? <Link href={href} onClick={onClose} aria-current={active ? 'page' : undefined} className={itemClass}>{itemContent}</Link>
@@ -340,20 +369,7 @@ function ManagementContent({ data, tanggal, loading, error, onRetry, onDateChang
   onDateChange: (value: string) => void;
   onAddMatch: () => void;
 }) {
-  if (loading && !data) return (
-    <div role="status" aria-live="polite" className="space-y-6">
-      <span className="sr-only">Memuat data dashboard…</span>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-4">
-        {[1, 2, 3, 4].map((item) => (
-          <div key={item} className="h-28 rounded-2xl border border-primary-100/90 bg-white p-5 animate-pulse" />
-        ))}
-      </div>
-      <div className="mt-6 grid items-start gap-5 2xl:grid-cols-[1fr_1.02fr]">
-        <div className="h-96 rounded-2xl border border-primary-100/90 bg-white p-5 animate-pulse" />
-        <div className="h-96 rounded-2xl border border-primary-100/90 bg-white p-5 animate-pulse" />
-      </div>
-    </div>
-  );
+  if (loading && !data) return <DashboardOverviewSkeleton />;
   if (error && !data) return <div className="rounded-2xl border border-error-100/30 bg-white px-5 py-12 text-center"><p role="alert" className="text-sm text-error-100">{error}</p><button type="button" onClick={onRetry} className="mt-4 rounded-xl bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white">Coba lagi</button></div>;
   if (!data) return null;
   return <>

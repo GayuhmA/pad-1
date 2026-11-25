@@ -10,4 +10,5 @@ require('./management-pendaftaran-route.test.cjs');
 require('./management-iuran-route.test.cjs');
 require('./management-dokumentasi-route.test.cjs');
 require('./management-histori-route.test.cjs');
+require('./management-admin-route.test.cjs');
 

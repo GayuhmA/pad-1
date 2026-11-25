@@ -6,6 +6,7 @@ import { createSessionChannel, SESSION_EVENT_KEY } from '@/lib/session-sync';
 import { useAppStore } from '@/stores/app-store';
 import { useProfileStore } from '@/stores/profile-store';
 import { useNotificationStore } from '@/stores/notification-store';
+import { getNavbarRightAction } from '@/lib/management-role';
 
 export function SessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
@@ -16,7 +17,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       const state = useAuthStore.getState();
       if (document.visibilityState === 'visible' && state.status !== 'unauthenticated') {
         void state.fetchUser(true);
-        if (state.user) void useNotificationStore.getState().fetchUnreadCount();
+        if (state.user && getNavbarRightAction(state.user.role) === 'resident') {
+          void useNotificationStore.getState().fetchUnreadCount();
+        }
       }
     };
     const sync = () => { void useAuthStore.getState().syncSession(); };
@@ -34,7 +37,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         useAppStore.getState().closeMobileMenu();
         const notifications = useNotificationStore.getState();
         notifications.reset();
-        if (state.user) void notifications.fetchUnreadCount();
+        if (state.user && getNavbarRightAction(state.user.role) === 'resident') {
+          void notifications.fetchUnreadCount();
+        }
       }
     });
     return () => {

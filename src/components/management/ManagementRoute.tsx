@@ -7,7 +7,9 @@ import { DocumentationManagement } from '@/components/management/DocumentationMa
 import { HistoryManagement } from '@/components/management/HistoryManagement';
 import { ManagementDashboard } from '@/components/management/ManagementDashboard';
 import { MessageManagement } from '@/components/management/MessageManagement';
+import { PanitiaManagement } from '@/components/management/PanitiaManagement';
 import { RegistrationManagement } from '@/components/management/RegistrationManagement';
+import { WargaManagement } from '@/components/management/WargaManagement';
 import { SessionStatus } from '@/components/SessionStatus';
 import { PageSkeleton } from '@/components/skeletons/PageSkeleton';
 import { useRequireManagementAuth } from '@/hooks/use-require-management-auth';
@@ -29,7 +31,7 @@ function NoManagementAccess({ role }: { role: string }) {
   );
 }
 
-export function ManagementRoute({ page }: { page: 'dashboard' | 'competitions' | 'registrations' | 'dues' | 'messages' | 'documentation' | 'history' }) {
+export function ManagementRoute({ page }: { page: 'dashboard' | 'competitions' | 'registrations' | 'dues' | 'warga' | 'panitia' | 'messages' | 'documentation' | 'history' }) {
   const { isReady } = useRequireManagementAuth();
   const user = useAuthStore((state) => state.user);
   const status = useAuthStore((state) => state.status);
@@ -38,10 +40,15 @@ export function ManagementRoute({ page }: { page: 'dashboard' | 'competitions' |
   if (!isReady || !user) return <PageSkeleton variant="management" />;
   const role: ManagementRole | null = getManagementRole(user.role);
   if (!role) return <NoManagementAccess role={user.role} />;
+  if ((page === 'warga' || page === 'panitia') && role !== 'admin') {
+    return <NoManagementAccess role={user.role} />;
+  }
 
   if (page === 'dashboard') return <ManagementDashboard role={role} userName={user.nama} />;
   if (page === 'competitions') return <CompetitionManagement role={role} userName={user.nama} />;
   if (page === 'dues') return <DuesManagement role={role} userName={user.nama} />;
+  if (page === 'warga') return <WargaManagement role={role} userName={user.nama} />;
+  if (page === 'panitia') return <PanitiaManagement role={role} userName={user.nama} />;
   if (page === 'messages') return <MessageManagement role={role} userName={user.nama} />;
   if (page === 'documentation') return <DocumentationManagement role={role} userName={user.nama} />;
   if (page === 'history') return <HistoryManagement role={role} userName={user.nama} />;

@@ -18,9 +18,31 @@ function getRouteSkeleton(pathname: string) {
 }
 
 export function AuthBoundary({ children }: { children: ReactNode }) {
-  const { isReady } = useRequireAuth();
-  const { user, error, isChecking, status, fetchUser } = useAuthStore();
   const pathname = usePathname();
+  const isPublicRoute = pathname === '/';
+  const { isReady } = useRequireAuth(!isPublicRoute);
+  const { user, error, isChecking, status, fetchUser } = useAuthStore();
+
+  if (isPublicRoute) {
+    return (
+      <div key={user?.id ?? 'guest'} className="flex min-h-full grow flex-col">
+        {user && error && (
+          <div role="alert" className="bg-amber-50 p-3 text-center text-body-2 text-neutral-900">
+            {error}{' '}
+            <button
+              type="button"
+              disabled={isChecking}
+              className="ml-2 underline"
+              onClick={() => void fetchUser(true)}
+            >
+              {isChecking ? 'Memeriksa…' : 'Coba lagi'}
+            </button>
+          </div>
+        )}
+        {children}
+      </div>
+    );
+  }
 
   if (status === 'error' && !user) {
     return <SessionStatus />;

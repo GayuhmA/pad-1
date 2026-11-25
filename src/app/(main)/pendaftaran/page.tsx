@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
@@ -9,6 +10,8 @@ import { PageSkeleton } from "@/components/skeletons/PageSkeleton";
 import { ApiRequestError } from "@/lib/api/client";
 import { batalkanPendaftaran, getRiwayatPendaftaran } from "@/lib/api/pendaftaran";
 import { formatTanggalIndonesia, formatWaktu } from "@/lib/lomba-date";
+import { getManagementRole } from "@/lib/management-role";
+import { useAuthStore } from "@/stores/auth-store";
 import type { RiwayatJadwalLomba, RiwayatPendaftaran } from "@/types/pendaftaran";
 
 function normalize(value: string): string {
@@ -66,8 +69,11 @@ function statusBadge(status: string): {
 }
 
 export default function PendaftaranPage() {
+  const user = useAuthStore((state) => state.user);
+  const managementRole = getManagementRole(user?.role);
+  const isManagementUser = managementRole !== null;
   const [items, setItems] = useState<RiwayatPendaftaran[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(!isManagementUser);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
   const [activeStatus, setActiveStatus] = useState("Semua");
@@ -78,6 +84,8 @@ export default function PendaftaranPage() {
   const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
+    if (isManagementUser) return;
+
     const controller = new AbortController();
 
     async function load() {
@@ -96,7 +104,7 @@ export default function PendaftaranPage() {
 
     void load();
     return () => controller.abort();
-  }, [retryKey]);
+  }, [retryKey, isManagementUser]);
 
   useEffect(() => {
     if (!notice) return;
@@ -159,7 +167,7 @@ export default function PendaftaranPage() {
     });
   }, [activeStatus, items, searchQuery]);
 
-  if (isLoading && !loadError && items.length === 0) {
+  if (!isManagementUser && isLoading && !loadError && items.length === 0) {
     return <PageSkeleton variant="pendaftaran" />;
   }
 
@@ -190,7 +198,20 @@ export default function PendaftaranPage() {
           </div>
         )}
 
-        {loadError ? (
+        {isManagementUser ? (
+          <section className="rounded-2xl bg-white p-8 text-center shadow-sm md:p-10">
+            <h2 className="text-h6 font-bold text-neutral-900">Halaman Pendaftaran Khusus Warga</h2>
+            <p className="mt-2 text-body-2 text-neutral-600">
+              Akun {managementRole === "admin" ? "Admin" : "Panitia"} tidak dapat mendaftar lomba. Silakan kelola pendaftaran peserta melalui dashboard manajemen.
+            </p>
+            <Link
+              href="/dashboard/pendaftaran"
+              className="mt-6 inline-flex min-h-11 items-center justify-center rounded-xl bg-primary-600 px-6 text-body-2 font-bold text-white shadow-sm transition-colors hover:bg-primary-700"
+            >
+              Kelola Pendaftaran Peserta
+            </Link>
+          </section>
+        ) : loadError ? (
           <section role="alert" className="rounded-2xl bg-white p-8 text-center shadow-sm">
             <h2 className="text-h6 font-bold text-neutral-900">Riwayat pendaftaran belum dapat dimuat</h2>
             <p className="mt-2 text-body-2 text-neutral-600">{loadError}</p>

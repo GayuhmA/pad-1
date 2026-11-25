@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
 import { Modal } from "@/components/Modal";
@@ -39,21 +40,6 @@ function formatTabDate(value: string) {
   return Number.isNaN(date.getTime()) ? value : tabDateFormatter.format(date);
 }
 
-function jakartaToday() {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    timeZone: "Asia/Jakarta",
-  }).formatToParts(new Date());
-  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  return `${value.year}-${value.month}-${value.day}`;
-}
-
-function initialAgendaDate() {
-  return jakartaToday();
-}
-
 function formatClock(value: string | null) {
   if (!value) return 'Waktu belum ditentukan';
   const match = value.match(/(?:^| )(\d{2}):(\d{2})/);
@@ -85,13 +71,25 @@ function agendaVisual(item: BerandaAgenda) {
 }
 
 export default function HomePage() {
+  const router = useRouter();
+  const user = useAuthStore((state) => state.user);
+  const authStatus = useAuthStore((state) => state.status);
   const [data, setData] = useState<BerandaData | null>(null);
   const [selectedAgenda, setSelectedAgenda] = useState<BerandaAgenda | null>(null);
   const [isAnnouncementOpen, setAnnouncementOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setLoading] = useState(true);
   const [requestVersion, setRequestVersion] = useState(0);
-  const [requestedDate, setRequestedDate] = useState(initialAgendaDate);
+  const [requestedDate, setRequestedDate] = useState<string | null>(null);
+
+  const requireLoginForAction = useCallback((): boolean => {
+    if (authStatus === "initializing") return false;
+    if (!user) {
+      router.push("/login");
+      return false;
+    }
+    return true;
+  }, [authStatus, user, router]);
 
   const retry = useCallback(() => {
     setLoading(true);
@@ -100,22 +98,23 @@ export default function HomePage() {
   }, []);
 
   const selectDate = useCallback((date: string) => {
+    if (!requireLoginForAction()) return;
     if (date === requestedDate) return;
     setLoading(true);
     setError(null);
     setRequestedDate(date);
-  }, [requestedDate]);
+  }, [requestedDate, requireLoginForAction]);
 
   useEffect(() => {
     const controller = new AbortController();
     let active = true;
-    void getBeranda(requestedDate, controller.signal)
+    void getBeranda(requestedDate ?? undefined, controller.signal)
       .then((response) => {
         if (active) setData(response.data);
       })
       .catch((reason: unknown) => {
         if (!active) return;
-        if (reason instanceof ApiRequestError && reason.status === 401) {
+        if (reason instanceof ApiRequestError && reason.status === 401 && useAuthStore.getState().user) {
           void useAuthStore.getState().fetchUser(true);
         }
         setError(reason instanceof Error ? reason.message : "Beranda gagal dimuat. Silakan coba lagi.");
@@ -200,7 +199,15 @@ export default function HomePage() {
                 </div>
               </div>
               <div className="shrink-0">
-                <Button variant="ghost" color="primary" size="M" className="font-bold" onClick={() => setAnnouncementOpen(true)}>
+                <Button
+                  variant="ghost"
+                  color="primary"
+                  size="M"
+                  className="font-bold"
+                  onClick={() => {
+                    if (requireLoginForAction()) setAnnouncementOpen(true);
+                  }}
+                >
                   Lihat Detail
                   <Image src="/icons/round-arrow-right.svg" alt="" width={24} height={24} />
                 </Button>
@@ -293,7 +300,14 @@ export default function HomePage() {
                       </p>
                     </div>
                     <div className="flex shrink-0 justify-center font-bold md:block">
-                      <Button variant="ghost" color="primary" size="M" onClick={() => setSelectedAgenda(item)}>
+                      <Button
+                        variant="ghost"
+                        color="primary"
+                        size="M"
+                        onClick={() => {
+                          if (requireLoginForAction()) setSelectedAgenda(item);
+                        }}
+                      >
                         Lihat Detail
                         <Image src="/icons/round-arrow-right.svg" alt="" width={24} height={24} />
                       </Button>

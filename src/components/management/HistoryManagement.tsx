@@ -1,6 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import {
+  DashboardHistoryDetailSkeleton,
+  DashboardHistorySkeleton,
+} from '@/components/management/DashboardLoadingSkeleton';
 import { Icon, ManagementLayout } from '@/components/management/ManagementDashboard';
 import { Modal } from '@/components/Modal';
 import {
@@ -33,21 +37,6 @@ interface WinnerEntry {
   tipePemenang: string;
   idPendaftaran?: number | null;
 }
-
-const fallbackPeriods: PeriodeHistoriItem[] = [
-  {
-    id_periode: 1,
-    tahun: '2026',
-    judul: 'Semarak HUT RI ke-81',
-    nama_kegiatan: 'Semarak HUT RI ke-81',
-    deskripsi: 'Perayaan Hari Ulang Tahun ke-81 Kemerdekaan Republik Indonesia telah dilaksanakan selama empat hari dengan penuh semangat dan antusiasme dari seluruh warga. Berbagai rangkaian kegiatan turut memeriahkan perayaan tahun ini, mulai dari berbagai perlombaan antarwarga hingga Malam Tirakatan yang dilaksanakan sebagai bentuk rasa syukur dan penghormatan terhadap perjuangan para pahlawan. Seluruh kegiatan berlangsung dengan meriah dan penuh kebersamaan, sekaligus menjadi kesempatan bagi warga untuk saling mengenal, mempererat silaturahmi, serta membangun semangat gotong royong di lingkungan bersama.',
-    tanggal_mulai: '2026-08-14',
-    tanggal_selesai: '2026-08-17',
-    status: 'Selesai',
-    logo: null,
-    jumlah_lomba: 8,
-  },
-];
 
 function formatDateRange(start: string | null, end: string | null, fallbackYear: string): string {
   if (!start && !end) return `Agustus ${fallbackYear}`;
@@ -106,7 +95,9 @@ function WinnerForm({
     initial?.idPendaftaran ? String(initial.idPendaftaran) : '',
   );
   const [customWinnerName, setCustomWinnerName] = useState<string>(initial?.winner ?? '');
-  const [isLoadingPeserta, setIsLoadingPeserta] = useState<boolean>(false);
+  const [isLoadingPeserta, setIsLoadingPeserta] = useState<boolean>(
+    () => !initial && Boolean(lombaList[0]?.id_lomba),
+  );
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [formError, setFormError] = useState<string>('');
 
@@ -119,8 +110,6 @@ function WinnerForm({
     if (!selectedLombaId) return;
 
     let active = true;
-    setIsLoadingPeserta(true);
-    setFormError('');
 
     getPesertaLomba(Number(selectedLombaId), role)
       .then((res) => {
@@ -146,7 +135,7 @@ function WinnerForm({
     return () => {
       active = false;
     };
-  }, [selectedLombaId, initial]);
+  }, [selectedLombaId, initial, role]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -231,7 +220,11 @@ function WinnerForm({
               <select
                 required
                 value={selectedLombaId}
-                onChange={(e) => setSelectedLombaId(e.target.value)}
+                onChange={(e) => {
+                  setIsLoadingPeserta(Boolean(e.target.value));
+                  setFormError('');
+                  setSelectedLombaId(e.target.value);
+                }}
                 className={inputClass}
               >
                 {lombaList.length === 0 && <option value="">Tidak ada perlombaan tersedia</option>}
@@ -407,9 +400,11 @@ export function HistoryManagement({
   role: 'admin' | 'panitia';
   userName: string;
 }) {
-  const [periods, setPeriods] = useState<PeriodeHistoriItem[]>(fallbackPeriods);
-  const [selectedPeriodId, setSelectedPeriodId] = useState<number>(1);
+  const [periods, setPeriods] = useState<PeriodeHistoriItem[]>([]);
+  const [selectedPeriodId, setSelectedPeriodId] = useState<number | null>(null);
   const [periodDetail, setPeriodDetail] = useState<DetailHistoriPeriode | null>(null);
+  const [periodsRefreshKey, setPeriodsRefreshKey] = useState(0);
+  const [detailRefreshKey, setDetailRefreshKey] = useState(0);
 
   const [isLoadingPeriods, setIsLoadingPeriods] = useState(true);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
@@ -426,22 +421,31 @@ export function HistoryManagement({
   const [descriptionDraft, setDescriptionDraft] = useState('');
   const [isSavingDescription, setIsSavingDescription] = useState(false);
 
-  // Load periods on mount
+  // Load periods on mount / retry
   useEffect(() => {
     let active = true;
-    setIsLoadingPeriods(true);
 
     getDaftarHistori()
       .then((res) => {
         if (!active) return;
-        if (res.data && res.data.length > 0) {
-          setPeriods(res.data);
-          // Default to latest period
-          setSelectedPeriodId(res.data[0].id_periode);
+        const list = res.data ?? [];
+        setPeriods(list);
+        if (list.length > 0) {
+          setIsLoadingDetail(true);
         }
+        setSelectedPeriodId((prev) => {
+          if (prev !== null && list.some((item) => item.id_periode === prev)) return prev;
+          return list[0]?.id_periode ?? null;
+        });
+        setErrorMessage('');
       })
-      .catch(() => {
-        // Fallback to initial periods
+      .catch((err: unknown) => {
+        if (!active) return;
+        setErrorMessage(
+          err instanceof Error
+            ? err.message
+            : 'Gagal memuat daftar periode histori perayaan.',
+        );
       })
       .finally(() => {
         if (active) setIsLoadingPeriods(false);
@@ -450,12 +454,13 @@ export function HistoryManagement({
     return () => {
       active = false;
     };
-  }, []);
+  }, [periodsRefreshKey]);
 
-  // Function to load detail of selected period
+  // Function to load detail after manual mutations
   const fetchDetail = useCallback(
     async (id: number) => {
       setIsLoadingDetail(true);
+      setPeriodDetail(null);
       setErrorMessage('');
       try {
         const res = await getDetailHistori(id);
@@ -474,16 +479,39 @@ export function HistoryManagement({
   );
 
   useEffect(() => {
-    if (selectedPeriodId) {
-      fetchDetail(selectedPeriodId);
-    }
-  }, [selectedPeriodId, fetchDetail]);
+    if (selectedPeriodId === null) return;
+    let active = true;
+
+    getDetailHistori(selectedPeriodId)
+      .then((res) => {
+        if (!active) return;
+        setPeriodDetail(res.data);
+        setErrorMessage('');
+      })
+      .catch((err: unknown) => {
+        if (!active) return;
+        setErrorMessage(
+          err instanceof Error
+            ? err.message
+            : 'Gagal memuat detail histori kegiatan perayaan.',
+        );
+      })
+      .finally(() => {
+        if (active) setIsLoadingDetail(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [selectedPeriodId, detailRefreshKey]);
 
   const activePeriod = useMemo(() => {
-    return periods.find((p) => p.id_periode === selectedPeriodId) ?? periods[0] ?? fallbackPeriods[0];
+    if (!periods.length) return null;
+    return periods.find((p) => p.id_periode === selectedPeriodId) ?? periods[0] ?? null;
   }, [periods, selectedPeriodId]);
 
   const dateRangeText = useMemo(() => {
+    if (!activePeriod) return '';
     return formatDateRange(
       periodDetail?.tanggal_mulai ?? activePeriod.tanggal_mulai,
       periodDetail?.tanggal_selesai ?? activePeriod.tanggal_selesai,
@@ -492,6 +520,7 @@ export function HistoryManagement({
   }, [periodDetail, activePeriod]);
 
   const displayTitle = useMemo(() => {
+    if (!activePeriod) return '';
     return (
       periodDetail?.nama_kegiatan ||
       periodDetail?.judul ||
@@ -504,7 +533,7 @@ export function HistoryManagement({
   const displayDescription = useMemo(() => {
     return (
       periodDetail?.deskripsi ??
-      activePeriod.deskripsi ??
+      activePeriod?.deskripsi ??
       'Belum ada deskripsi rangkuman untuk perayaan ini.'
     );
   }, [periodDetail, activePeriod]);
@@ -616,7 +645,9 @@ export function HistoryManagement({
       await deletePemenang(deletingWinner.idPemenang);
       setNotice(`Rekap pemenang ${deletingWinner.competition} berhasil dihapus.`);
       setDeletingWinner(null);
-      await fetchDetail(selectedPeriodId);
+      if (selectedPeriodId !== null) {
+        await fetchDetail(selectedPeriodId);
+      }
     } catch (err) {
       setErrorMessage(
         err instanceof Error ? err.message : 'Gagal menghapus rekap pemenang.',
@@ -638,283 +669,314 @@ export function HistoryManagement({
           </h1>
         </div>
 
-        {/* Periode selector */}
-        <section
-          aria-label="Pilih histori perayaan"
-          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary-100 bg-white px-4 py-4 sm:px-5"
-        >
-          <label htmlFor="history-event" className="sr-only">
-            Pilih perayaan
-          </label>
-          <select
-            id="history-event"
-            value={selectedPeriodId}
-            disabled={isLoadingPeriods}
-            onChange={(e) => {
-              setSelectedPeriodId(Number(e.target.value));
-              setQuery('');
-              setNotice('');
-              setErrorMessage('');
-              setIsEditingDescription(false);
-            }}
-            className="h-10 min-w-48 rounded-xl border border-neutral-200 bg-white px-3.5 text-sm font-semibold text-primary-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
-          >
-            {periods.map((item) => (
-              <option key={item.id_periode} value={item.id_periode}>
-                {item.nama_kegiatan || item.judul || `Perayaan ${item.tahun}`}
-              </option>
-            ))}
-          </select>
-          <p className="text-sm font-medium text-neutral-400">{dateRangeText}</p>
-        </section>
-
-        {notice && (
-          <p
-            role="status"
-            className="rounded-xl border border-success-100 bg-success-10 px-4 py-3 text-sm font-medium text-success-200"
-          >
-            {notice}
-          </p>
-        )}
-
-        {errorMessage && (
-          <div
-            role="alert"
-            className="rounded-xl border border-error-100 bg-error-10 px-4 py-3 text-sm font-medium text-error-100"
-          >
-            {errorMessage}
-          </div>
-        )}
-
-        {/* Ringkasan Perayaan */}
-        <section
-          aria-labelledby="history-summary-title"
-          className="relative rounded-2xl border border-primary-100 bg-white p-5 sm:p-7"
-        >
-          <div className="flex items-start justify-between gap-4">
-            <h2 id="history-summary-title" className="text-lg font-semibold text-neutral-900 sm:text-xl">
-              {displayTitle}
-            </h2>
-            {!isEditingDescription && (
-              <button
-                type="button"
-                onClick={beginDescriptionEdit}
-                aria-label="Edit ringkasan perayaan"
-                title="Edit ringkasan"
-                className="shrink-0 rounded-lg p-2 text-neutral-400 transition-colors hover:bg-primary-100/40 hover:text-primary-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
-              >
-                <Icon name="edit" className="size-4.5" />
-              </button>
-            )}
-          </div>
-
-          {isEditingDescription ? (
-            <form onSubmit={saveDescription} className="mt-4">
-              <label htmlFor="history-description" className="sr-only">
-                Ringkasan perayaan
-              </label>
-              <textarea
-                id="history-description"
-                required
-                maxLength={2000}
-                autoFocus
-                value={descriptionDraft}
-                onChange={(e) => setDescriptionDraft(e.target.value)}
-                rows={5}
-                className="w-full resize-y rounded-xl border border-neutral-200 px-4 py-3 text-sm leading-6 text-neutral-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
-              />
-              <p className="mt-1 text-right text-xs text-neutral-400">
-                {descriptionDraft.length}/2.000
-              </p>
-              <div className="mt-3 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsEditingDescription(false)}
-                  disabled={isSavingDescription}
-                  className="min-h-10 rounded-xl border border-neutral-200 px-4 text-sm font-semibold text-neutral-600 hover:bg-neutral-50 disabled:opacity-50"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSavingDescription}
-                  className="min-h-10 rounded-xl bg-primary-600 px-4 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-50"
-                >
-                  {isSavingDescription ? 'Menyimpan...' : 'Simpan Ringkasan'}
-                </button>
-              </div>
-            </form>
-          ) : (
-            <p className="mt-3 whitespace-pre-line text-sm leading-7 text-neutral-500 sm:text-base">
-              {displayDescription}
+        {isLoadingPeriods ? (
+          <DashboardHistorySkeleton />
+        ) : periods.length === 0 ? (
+          <section className="rounded-2xl border border-primary-100 bg-white px-6 py-12 text-center">
+            <p className={`text-sm font-medium ${errorMessage ? 'text-error-100' : 'text-neutral-500'}`}>
+              {errorMessage || 'Belum ada periode histori perayaan.'}
             </p>
-          )}
-        </section>
-
-        {/* Tabel Rekap Juara Perlombaan */}
-        <section
-          aria-labelledby="winner-heading"
-          className="overflow-hidden rounded-2xl border border-primary-100 bg-white"
-        >
-          <div className="p-4 sm:p-5 lg:p-6">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <h2
-                id="winner-heading"
-                className="text-xl font-semibold tracking-tight text-neutral-900 sm:text-2xl"
-              >
-                Rekap Juara Perlombaan
-              </h2>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsAddingWinner(true);
-                  setNotice('');
-                }}
-                className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-primary-600 px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
-              >
-                <span aria-hidden="true" className="text-lg leading-none">
-                  +
-                </span>
-                Input Pemenang
-              </button>
-            </div>
-            <div className="mt-4 max-w-lg">
-              <label htmlFor="winner-search" className="sr-only">
-                Cari rekap pemenang
+            <button
+              type="button"
+              onClick={() => {
+                setIsLoadingPeriods(true);
+                setErrorMessage('');
+                setPeriodsRefreshKey((key) => key + 1);
+              }}
+              className="mt-4 inline-flex min-h-10 items-center rounded-xl bg-primary-600 px-4 text-sm font-semibold text-white hover:bg-primary-700"
+            >
+              Muat Ulang
+            </button>
+          </section>
+        ) : (
+          <>
+            {/* Periode selector */}
+            <section
+              aria-label="Pilih histori perayaan"
+              className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary-100 bg-white px-4 py-4 sm:px-5"
+            >
+              <label htmlFor="history-event" className="sr-only">
+                Pilih perayaan
               </label>
-              <div className="relative">
-                <Icon
-                  name="search"
-                  className="pointer-events-none absolute top-1/2 left-3.5 size-5 -translate-y-1/2 text-neutral-400"
-                />
-                <input
-                  id="winner-search"
-                  type="search"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Cari nama, kategori, atau lokasi lomba"
-                  className="h-11 w-full rounded-xl border border-neutral-200 bg-white pr-4 pl-11 text-sm text-neutral-800 placeholder:text-neutral-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
-                />
-              </div>
-            </div>
-          </div>
+              <select
+                id="history-event"
+                value={selectedPeriodId ?? ''}
+                disabled={isLoadingPeriods}
+                onChange={(e) => {
+                  setIsLoadingDetail(true);
+                  setSelectedPeriodId(Number(e.target.value));
+                  setPeriodDetail(null);
+                  setQuery('');
+                  setNotice('');
+                  setErrorMessage('');
+                  setIsEditingDescription(false);
+                }}
+                className="h-10 min-w-48 rounded-xl border border-neutral-200 bg-white px-3.5 text-sm font-semibold text-primary-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
+              >
+                {periods.map((item) => (
+                  <option key={item.id_periode} value={item.id_periode}>
+                    {item.nama_kegiatan || item.judul || `Perayaan ${item.tahun}`}
+                  </option>
+                ))}
+              </select>
+              <p className="text-sm font-medium text-neutral-400">{dateRangeText}</p>
+            </section>
 
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[860px] border-collapse text-left text-sm">
-              <caption className="sr-only">
-                Rekap pemenang perlombaan {displayTitle}
-              </caption>
-              <thead className="bg-neutral-50 text-xs font-semibold text-neutral-700">
-                <tr>
-                  <th scope="col" className="px-5 py-4">
-                    Cabang Perlombaan
-                  </th>
-                  <th scope="col" className="px-4 py-4">
-                    Kategori
-                  </th>
-                  <th scope="col" className="px-4 py-4">
-                    Partisipan
-                  </th>
-                  <th scope="col" className="px-4 py-4">
-                    Lokasi Pelaksanaan
-                  </th>
-                  <th scope="col" className="px-4 py-4">
-                    Pemenang
-                  </th>
-                  <th scope="col" className="px-4 py-4 text-right">
-                    Aksi
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-neutral-100">
-                {filteredWinners.map((item) => (
-                  <tr key={item.id} className="transition-colors hover:bg-neutral-50/70">
-                    <th scope="row" className="px-5 py-4 font-semibold text-neutral-900">
-                      {item.competition}
-                    </th>
-                    <td className="px-4 py-4 text-neutral-500">{item.category}</td>
-                    <td className="px-4 py-4 text-neutral-500">{item.participants}</td>
-                    <td className="px-4 py-4 text-neutral-500">{item.location}</td>
-                    <td className="px-4 py-4 text-neutral-600">
-                      <span className="font-semibold text-neutral-900">
-                        Juara {item.peringkat}:
-                      </span>{' '}
-                      {item.winner}
-                      {item.keterangan && (
-                        <span className="block text-xs text-neutral-400">
-                          {item.keterangan}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex justify-end gap-1">
+            {notice && (
+              <p
+                role="status"
+                className="rounded-xl border border-success-100 bg-success-10 px-4 py-3 text-sm font-medium text-success-200"
+              >
+                {notice}
+              </p>
+            )}
+
+            {errorMessage && (
+              <div
+                role="alert"
+                className="rounded-xl border border-error-100 bg-error-10 px-4 py-3 text-sm font-medium text-error-100"
+              >
+                {errorMessage}
+              </div>
+            )}
+
+            {isLoadingDetail && !periodDetail ? (
+              <DashboardHistoryDetailSkeleton />
+            ) : (
+              <>
+                {/* Ringkasan Perayaan */}
+                <section
+                  aria-labelledby="history-summary-title"
+                  className="relative rounded-2xl border border-primary-100 bg-white p-5 sm:p-7"
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <h2 id="history-summary-title" className="text-lg font-semibold text-neutral-900 sm:text-xl">
+                      {displayTitle}
+                    </h2>
+                    {!isEditingDescription && (
+                      <button
+                        type="button"
+                        onClick={beginDescriptionEdit}
+                        aria-label="Edit ringkasan perayaan"
+                        title="Edit ringkasan"
+                        className="shrink-0 rounded-lg p-2 text-neutral-400 transition-colors hover:bg-primary-100/40 hover:text-primary-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
+                      >
+                        <Icon name="edit" className="size-4.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  {isEditingDescription ? (
+                    <form onSubmit={saveDescription} className="mt-4">
+                      <label htmlFor="history-description" className="sr-only">
+                        Ringkasan perayaan
+                      </label>
+                      <textarea
+                        id="history-description"
+                        required
+                        maxLength={2000}
+                        autoFocus
+                        value={descriptionDraft}
+                        onChange={(e) => setDescriptionDraft(e.target.value)}
+                        rows={5}
+                        className="w-full resize-y rounded-xl border border-neutral-200 px-4 py-3 text-sm leading-6 text-neutral-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
+                      />
+                      <p className="mt-1 text-right text-xs text-neutral-400">
+                        {descriptionDraft.length}/2.000
+                      </p>
+                      <div className="mt-3 flex justify-end gap-2">
                         <button
                           type="button"
-                          onClick={() => {
-                            setEditingWinner(item);
-                            setNotice('');
-                          }}
-                          aria-label={`Edit pemenang ${item.competition}`}
-                          title="Edit"
-                          className="rounded-lg p-2 text-primary-600 hover:bg-primary-100/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
+                          onClick={() => setIsEditingDescription(false)}
+                          disabled={isSavingDescription}
+                          className="min-h-10 rounded-xl border border-neutral-200 px-4 text-sm font-semibold text-neutral-600 hover:bg-neutral-50 disabled:opacity-50"
                         >
-                          <Icon name="edit" className="size-4.5" />
+                          Batal
                         </button>
                         <button
-                          type="button"
-                          onClick={() => setDeletingWinner(item)}
-                          aria-label={`Hapus rekap ${item.competition}`}
-                          title="Hapus"
-                          className="rounded-lg p-2 text-primary-600 hover:bg-primary-100/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
+                          type="submit"
+                          disabled={isSavingDescription}
+                          className="min-h-10 rounded-xl bg-primary-600 px-4 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-50"
                         >
-                          <svg
-                            aria-hidden="true"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="1.8"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            className="size-4.5"
-                          >
-                            <path d="M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m4 4v6m6-6v6" />
-                          </svg>
+                          {isSavingDescription ? 'Menyimpan...' : 'Simpan Ringkasan'}
                         </button>
                       </div>
-                    </td>
-                  </tr>
-                ))}
-                {filteredWinners.length === 0 && (
-                  <tr>
-                    <td colSpan={6} className="px-5 py-14 text-center">
-                      <p className="font-semibold text-neutral-800">
-                        {isLoadingDetail
-                          ? 'Memuat rekap pemenang...'
-                          : query
-                          ? 'Rekap tidak ditemukan'
-                          : 'Belum ada pemenang'}
-                      </p>
-                      <p className="mt-1 text-sm text-neutral-500">
-                        {isLoadingDetail
-                          ? 'Silakan tunggu sebentar...'
-                          : query
-                          ? 'Coba kata kunci lain.'
-                          : 'Tambahkan hasil perlombaan untuk perayaan ini.'}
-                      </p>
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-          <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-neutral-100 px-5 py-4 text-xs font-medium text-neutral-400">
-            <span>{filteredWinners.length} Pemenang</span>
-            <span>{displayTitle}</span>
-          </footer>
-        </section>
+                    </form>
+                  ) : (
+                    <p className="mt-3 whitespace-pre-line text-sm leading-7 text-neutral-500 sm:text-base">
+                      {displayDescription}
+                    </p>
+                  )}
+                </section>
+
+                {/* Tabel Rekap Juara Perlombaan */}
+                <section
+                  aria-labelledby="winner-heading"
+                  className="overflow-hidden rounded-2xl border border-primary-100 bg-white"
+                >
+                  <div className="p-4 sm:p-5 lg:p-6">
+                    <div className="flex flex-wrap items-center justify-between gap-4">
+                      <h2
+                        id="winner-heading"
+                        className="text-xl font-semibold tracking-tight text-neutral-900 sm:text-2xl"
+                      >
+                        Rekap Juara Perlombaan
+                      </h2>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsAddingWinner(true);
+                          setNotice('');
+                        }}
+                        className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-primary-600 px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
+                      >
+                        <span aria-hidden="true" className="text-lg leading-none">
+                          +
+                        </span>
+                        Input Pemenang
+                      </button>
+                    </div>
+                    <div className="mt-4 max-w-lg">
+                      <label htmlFor="winner-search" className="sr-only">
+                        Cari rekap pemenang
+                      </label>
+                      <div className="relative">
+                        <Icon
+                          name="search"
+                          className="pointer-events-none absolute top-1/2 left-3.5 size-5 -translate-y-1/2 text-neutral-400"
+                        />
+                        <input
+                          id="winner-search"
+                          type="search"
+                          value={query}
+                          onChange={(e) => setQuery(e.target.value)}
+                          placeholder="Cari nama, kategori, atau lokasi lomba"
+                          className="h-11 w-full rounded-xl border border-neutral-200 bg-white pr-4 pl-11 text-sm text-neutral-800 placeholder:text-neutral-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[860px] border-collapse text-left text-sm">
+                      <caption className="sr-only">
+                        Rekap pemenang perlombaan {displayTitle}
+                      </caption>
+                      <thead className="bg-neutral-50 text-xs font-semibold text-neutral-700">
+                        <tr>
+                          <th scope="col" className="px-5 py-4">
+                            Cabang Perlombaan
+                          </th>
+                          <th scope="col" className="px-4 py-4">
+                            Kategori
+                          </th>
+                          <th scope="col" className="px-4 py-4">
+                            Partisipan
+                          </th>
+                          <th scope="col" className="px-4 py-4">
+                            Lokasi Pelaksanaan
+                          </th>
+                          <th scope="col" className="px-4 py-4">
+                            Pemenang
+                          </th>
+                          <th scope="col" className="px-4 py-4 text-right">
+                            Aksi
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-neutral-100">
+                        {filteredWinners.map((item) => (
+                          <tr key={item.id} className="transition-colors hover:bg-neutral-50/70">
+                            <th scope="row" className="px-5 py-4 font-semibold text-neutral-900">
+                              {item.competition}
+                            </th>
+                            <td className="px-4 py-4 text-neutral-500">{item.category}</td>
+                            <td className="px-4 py-4 text-neutral-500">{item.participants}</td>
+                            <td className="px-4 py-4 text-neutral-500">{item.location}</td>
+                            <td className="px-4 py-4 text-neutral-600">
+                              <span className="font-semibold text-neutral-900">
+                                Juara {item.peringkat}:
+                              </span>{' '}
+                              {item.winner}
+                              {item.keterangan && (
+                                <span className="block text-xs text-neutral-400">
+                                  {item.keterangan}
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="flex justify-end gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingWinner(item);
+                                    setNotice('');
+                                  }}
+                                  aria-label={`Edit pemenang ${item.competition}`}
+                                  title="Edit"
+                                  className="rounded-lg p-2 text-primary-600 hover:bg-primary-100/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
+                                >
+                                  <Icon name="edit" className="size-4.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setDeletingWinner(item)}
+                                  aria-label={`Hapus rekap ${item.competition}`}
+                                  title="Hapus"
+                                  className="rounded-lg p-2 text-primary-600 hover:bg-primary-100/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
+                                >
+                                  <svg
+                                    aria-hidden="true"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="1.8"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    className="size-4.5"
+                                  >
+                                    <path d="M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m4 4v6m6-6v6" />
+                                  </svg>
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                        {filteredWinners.length === 0 && (
+                          <tr>
+                            <td colSpan={6} className="px-5 py-14 text-center">
+                              <p className="font-semibold text-neutral-800">
+                                {isLoadingDetail
+                                  ? 'Memuat rekap pemenang...'
+                                  : query
+                                  ? 'Rekap tidak ditemukan'
+                                  : 'Belum ada pemenang'}
+                              </p>
+                              <p className="mt-1 text-sm text-neutral-500">
+                                {isLoadingDetail
+                                  ? 'Silakan tunggu sebentar...'
+                                  : query
+                                  ? 'Coba kata kunci lain.'
+                                  : 'Tambahkan hasil perlombaan untuk perayaan ini.'}
+                              </p>
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                  <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-neutral-100 px-5 py-4 text-xs font-medium text-neutral-400">
+                    <span>{filteredWinners.length} Pemenang</span>
+                    <span>{displayTitle}</span>
+                  </footer>
+                </section>
+              </>
+            )}
+          </>
+        )}
       </div>
 
-      {(isAddingWinner || editingWinner) && (
+      {(isAddingWinner || editingWinner) && selectedPeriodId !== null && (
         <WinnerForm
           key={editingWinner?.id ?? 'new'}
           initial={editingWinner}
@@ -929,7 +991,8 @@ export function HistoryManagement({
             setIsAddingWinner(false);
             setEditingWinner(null);
             setNotice(msg);
-            fetchDetail(selectedPeriodId);
+            setIsLoadingDetail(true);
+            setDetailRefreshKey((key) => key + 1);
           }}
         />
       )}

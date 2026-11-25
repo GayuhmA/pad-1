@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const { createAuthStore } = require('../src/stores/auth-store.ts');
 const { ApiRequestError } = require('../src/lib/api/client.ts');
 const { getResidentProfile } = require('../src/lib/profile.ts');
+const { getManagementRole, getPostLoginPath, getNavbarRightAction, canRegisterCompetition } = require('../src/lib/management-role.ts');
 const user = { id: 1, username: 'warga-test', nama: 'Test Warga', role: 'Warga', phone: '081234567890', is_active: true };
 function deferred() {
   let resolve, reject;
@@ -150,4 +151,30 @@ test('restricted browser storage/channels cannot turn a successful session chang
       if (value === undefined) delete global[key]; else global[key] = value;
     }
   }
+});
+
+test('management roles show dashboard action instead of resident navbar icons', () => {
+  assert.equal(getManagementRole('Admin'), 'admin');
+  assert.equal(getManagementRole('Administrator'), 'admin');
+  assert.equal(getManagementRole('Panitia'), 'panitia');
+  assert.equal(getManagementRole('Warga'), null);
+
+  assert.equal(getPostLoginPath('Admin'), '/dashboard');
+  assert.equal(getPostLoginPath('Panitia'), '/dashboard');
+  assert.equal(getPostLoginPath('Warga'), '/');
+
+  assert.equal(getNavbarRightAction('Admin'), 'dashboard');
+  assert.equal(getNavbarRightAction('admin'), 'dashboard');
+  assert.equal(getNavbarRightAction('Panitia'), 'dashboard');
+  assert.equal(getNavbarRightAction('panitia'), 'dashboard');
+  assert.equal(getNavbarRightAction('Warga'), 'resident');
+  assert.equal(getNavbarRightAction(null), 'resident');
+  assert.equal(getNavbarRightAction(undefined), 'resident');
+  assert.equal(getNavbarRightAction(''), 'resident');
+
+  assert.equal(canRegisterCompetition('Warga'), true);
+  assert.equal(canRegisterCompetition('Admin'), false);
+  assert.equal(canRegisterCompetition('Panitia'), false);
+  assert.equal(canRegisterCompetition(null), false);
+  assert.equal(canRegisterCompetition(''), false);
 });

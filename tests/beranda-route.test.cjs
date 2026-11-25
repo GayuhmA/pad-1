@@ -4,6 +4,7 @@ process.env.NODE_ENV = 'production';
 process.env.API_URL = 'https://backend.example';
 const { NextRequest } = require('next/server');
 const { GET: beranda } = require('../src/app/api/warga/beranda/route.ts');
+const { GET: publicBeranda } = require('../src/app/api/beranda/route.ts');
 const { SESSION_COOKIE } = require('../src/lib/server/auth.ts');
 
 const originalFetch = global.fetch;
@@ -87,4 +88,48 @@ test('beranda rejects malformed successful backend data', async () => {
   const response = await beranda(request());
   assert.equal(response.status, 502);
   assert.deepEqual(await response.json(), { message: 'Respons layanan beranda tidak valid. Silakan coba lagi.' });
+});
+
+test('public beranda allows guest access, populates competition dates, and falls back on expired session', async () => {
+  global.fetch = async (url, init) => {
+    if (String(url) === 'https://backend.example/api/lomba') {
+      return Response.json({
+        success: true,
+        message: 'ok',
+        data: [],
+        tanggal_tersedia: ['2026-08-15', '2026-08-16'],
+      });
+    }
+    assert.equal(String(url), 'https://backend.example/api/beranda?tanggal=2026-08-15');
+    assert.equal(init.headers.Authorization, undefined);
+    return Response.json(payload);
+  };
+  const guestReq = new NextRequest('https://frontend.example/api/beranda');
+  const guestRes = await publicBeranda(guestReq);
+  assert.equal(guestRes.status, 200);
+  const guestJson = await guestRes.json();
+  assert.deepEqual(guestJson.data.tanggal_tersedia, ['2026-08-15', '2026-08-16']);
+
+  let calls = 0;
+  global.fetch = async (url) => {
+    if (String(url) === 'https://backend.example/api/lomba') {
+      return Response.json({ success: true, message: 'ok', data: [], tanggal_tersedia: ['2026-08-15', '2026-08-16'] });
+    }
+    calls++;
+    if (calls === 1) {
+      assert.equal(String(url), 'https://backend.example/api/warga/beranda?tanggal=2026-08-16');
+      return Response.json({ message: 'Unauthenticated' }, { status: 401 });
+    }
+    assert.equal(String(url), 'https://backend.example/api/beranda?tanggal=2026-08-16');
+    return Response.json(payload);
+  };
+  const expiredReq = new NextRequest('https://frontend.example/api/beranda?tanggal=2026-08-16', {
+    headers: { Cookie: `${SESSION_COOKIE}=expired-token` },
+  });
+  const expiredRes = await publicBeranda(expiredReq);
+  assert.equal(expiredRes.status, 200);
+  assert.equal(calls, 2);
+
+  const invalidDateReq = new NextRequest('https://frontend.example/api/beranda?tanggal=invalid');
+  assert.equal((await publicBeranda(invalidDateReq)).status, 422);
 });

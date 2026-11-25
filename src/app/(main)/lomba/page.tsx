@@ -9,6 +9,7 @@ import { PageSkeleton } from "@/components/skeletons/PageSkeleton";
 import { ApiRequestError } from "@/lib/api/client";
 import { daftarLomba, getDaftarLomba } from "@/lib/api/lomba";
 import { getRiwayatPendaftaran } from "@/lib/api/pendaftaran";
+import { canRegisterCompetition, getManagementRole } from "@/lib/management-role";
 import { useAuthStore } from "@/stores/auth-store";
 import {
   buildAgendaDateTabs,
@@ -89,7 +90,10 @@ function scheduleTime(jadwal: JadwalLomba): string {
 }
 
 export default function LombaPage() {
-  const birthDate = useAuthStore((state) => state.user?.tanggal_lahir ?? null);
+  const user = useAuthStore((state) => state.user);
+  const birthDate = user?.tanggal_lahir ?? null;
+  const isManagementUser = getManagementRole(user?.role) !== null;
+  const allowRegistration = canRegisterCompetition(user?.role);
   const [lombaList, setLombaList] = useState<Lomba[]>([]);
   const [availableDates, setAvailableDates] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -117,7 +121,9 @@ export default function LombaPage() {
       try {
         const [response, history] = await Promise.all([
           getDaftarLomba(controller.signal),
-          getRiwayatPendaftaran(controller.signal).catch(() => null),
+          isManagementUser
+            ? Promise.resolve(null)
+            : getRiwayatPendaftaran(controller.signal).catch(() => null),
         ]);
         if (controller.signal.aborted) return;
         const activeLombaIds = history
@@ -138,7 +144,7 @@ export default function LombaPage() {
     }
     void load();
     return () => controller.abort();
-  }, [retryKey]);
+  }, [retryKey, isManagementUser]);
 
   useEffect(() => {
     const refreshRegistrations = () => setRetryKey((value) => value + 1);
@@ -204,7 +210,7 @@ export default function LombaPage() {
   }, [lombaList, effectiveDate, matchesCommonFilters]);
 
   async function handleRegistration() {
-    if (!selectedLomba || isSubmitting) return;
+    if (!selectedLomba || isSubmitting || !allowRegistration) return;
     const target = selectedLomba;
     setIsSubmitting(true);
     try {
@@ -237,6 +243,15 @@ export default function LombaPage() {
           <h1 className="text-h4 font-bold text-neutral-900 md:text-h2">Daftar Lomba</h1>
           <p className="mt-2 text-body-1 text-neutral-600">Pilih dan ikuti lomba yang tersedia</p>
         </header>
+
+        {isManagementUser && (
+          <div
+            role="status"
+            className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-4 text-body-2 font-medium text-amber-900 shadow-xs"
+          >
+            Anda masuk sebagai {getManagementRole(user?.role) === "admin" ? "Admin" : "Panitia"}. Pendaftaran lomba hanya diperuntukkan bagi akun Warga.
+          </div>
+        )}
 
         {notice && (
           <div
@@ -373,7 +388,7 @@ export default function LombaPage() {
                     const isOpen = normalize(lomba.status) === "dibuka";
                     const category = categoryLabel(lomba.kategori?.nama_kategori ?? "Umum");
                     const isAgeEligible = isEligibleForCategory(category, residentAge);
-                    const canRegister = isOpen && !lomba.sudah_mendaftar && isAgeEligible;
+                    const canRegister = allowRegistration && isOpen && !lomba.sudah_mendaftar && isAgeEligible;
                     return (
                       <article key={lomba.id_lomba} className="flex flex-col rounded-2xl bg-white p-6 shadow-sm">
                         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
@@ -413,15 +428,19 @@ export default function LombaPage() {
                           size="L"
                           className="mt-auto w-full font-bold"
                           disabled={!canRegister}
-                          onClick={() => setSelectedLomba(lomba)}
+                          onClick={() => {
+                            if (allowRegistration) setSelectedLomba(lomba);
+                          }}
                         >
-                          {lomba.sudah_mendaftar
-                            ? "Sudah Terdaftar"
-                            : !isAgeEligible && isOpen
-                              ? "Tidak Sesuai Umur"
-                              : isOpen
-                                ? "Daftar Sekarang"
-                                : "Pendaftaran Ditutup"}
+                          {isManagementUser
+                            ? "Khusus Warga"
+                            : lomba.sudah_mendaftar
+                              ? "Sudah Terdaftar"
+                              : !isAgeEligible && isOpen
+                                ? "Tidak Sesuai Umur"
+                                : isOpen
+                                  ? "Daftar Sekarang"
+                                  : "Pendaftaran Ditutup"}
                         </Button>
                       </article>
                     );

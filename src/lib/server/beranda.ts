@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { Agent } from 'undici';
+import { isValidIsoDate } from '@/lib/lomba-date';
 import type {
   BerandaAgenda,
   BerandaBanner,
@@ -140,16 +141,23 @@ export function readBerandaResponse(value: unknown): BerandaResponse {
   return { success: true, message: string(response.message), data };
 }
 
-export async function backendBeranda(token: string, tanggal?: string): Promise<BerandaResponse> {
+async function fetchBerandaFromBackend(
+  endpoint: '/api/beranda' | '/api/warga/beranda',
+  token?: string,
+  tanggal?: string,
+): Promise<BerandaResponse> {
   const base = process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL;
   if (!base) throw new BerandaServiceError(503, 'Layanan beranda belum dikonfigurasi.');
-  const url = new URL(`${base.replace(/\/$/, '')}/api/warga/beranda`);
+  const url = new URL(`${base.replace(/\/$/, '')}${endpoint}`);
   if (tanggal) url.searchParams.set('tanggal', tanggal);
+
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  if (token) headers.Authorization = `Bearer ${token}`;
 
   let response: Response;
   try {
     response = await fetch(url, {
-      headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+      headers,
       cache: 'no-store',
       redirect: 'error',
       signal: AbortSignal.timeout(15_000),
@@ -181,4 +189,67 @@ export async function backendBeranda(token: string, tanggal?: string): Promise<B
     throw new BerandaServiceError(502, 'Respons layanan beranda tidak valid. Silakan coba lagi.');
   }
   return readBerandaResponse(body);
+}
+
+export function backendBeranda(token: string, tanggal?: string): Promise<BerandaResponse> {
+  return fetchBerandaFromBackend('/api/warga/beranda', token, tanggal);
+}
+
+export function backendPublicBeranda(tanggal?: string): Promise<BerandaResponse> {
+  return fetchBerandaFromBackend('/api/beranda', undefined, tanggal);
+}
+
+export function pickDefaultScheduleDate(availableDates: string[], today: string): string | undefined {
+  if (availableDates.length === 0) return undefined;
+  if (availableDates.includes(today)) return today;
+  return availableDates.find((date) => date >= today) ?? availableDates[0];
+}
+
+export async function backendAvailableScheduleDates(): Promise<string[]> {
+  const base = process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL;
+  if (!base) return [];
+
+  try {
+    const response = await fetch(`${base.replace(/\/$/, '')}/api/lomba`, {
+      headers: { Accept: 'application/json' },
+      cache: 'no-store',
+      redirect: 'error',
+      signal: AbortSignal.timeout(10_000),
+      dispatcher: backendDispatcher,
+    } as RequestInit & { dispatcher: Agent });
+
+    if (!response.ok) return [];
+    const body = (await response.json()) as Record<string, unknown>;
+    if (!body || body.success !== true) return [];
+
+    const collected: string[] = [];
+    if (Array.isArray(body.tanggal_tersedia)) {
+      for (const item of body.tanggal_tersedia) {
+        if (typeof item === 'string') {
+          const normalized = item.slice(0, 10);
+          if (isValidIsoDate(normalized)) collected.push(normalized);
+        }
+      }
+    }
+
+    if (collected.length === 0 && Array.isArray(body.data)) {
+      for (const lomba of body.data) {
+        if (!lomba || typeof lomba !== 'object') continue;
+        const jadwal = (lomba as Record<string, unknown>).jadwal;
+        if (!Array.isArray(jadwal)) continue;
+        for (const schedule of jadwal) {
+          if (!schedule || typeof schedule !== 'object') continue;
+          const tanggal = (schedule as Record<string, unknown>).tanggal;
+          if (typeof tanggal === 'string') {
+            const normalized = tanggal.slice(0, 10);
+            if (isValidIsoDate(normalized)) collected.push(normalized);
+          }
+        }
+      }
+    }
+
+    return [...new Set(collected)].sort();
+  } catch {
+    return [];
+  }
 }
