@@ -201,7 +201,7 @@ test('PUT and DELETE /api/dashboard/warga/[id] validate IDs and forward mutation
   assert.equal(delRes.status, 200);
 });
 
-test('RT & RW endpoints handle listing, creation, and conflict responses cleanly', async () => {
+test('RT & RW endpoints handle RT listing/creation and reject RW mutations with 405', async () => {
   global.fetch = async (url) => {
     if (String(url).endsWith('/api/admin/rw')) {
       return Response.json({ success: true, data: [{ id_rw: 1, nomor_rw: '001', nama_rw: 'RW 001' }] });
@@ -213,8 +213,7 @@ test('RT & RW endpoints handle listing, creation, and conflict responses cleanly
   const rtJson = await rtRes.json();
   assert.equal(rtJson.data.rtList[0].nomor_rw, '001');
 
-  global.fetch = async () => Response.json({ success: true, message: 'RW berhasil ditambahkan.' }, { status: 201 });
-  assert.equal((await createRw(mutateReq('/api/dashboard/rw', 'POST', { nomor_rw: '002' }))).status, 201);
+  assert.equal((await createRw(mutateReq('/api/dashboard/rw', 'POST', { nomor_rw: '002' }))).status, 405);
 
   global.fetch = async () => Response.json({ success: true, message: 'RT berhasil ditambahkan.' }, { status: 201 });
   assert.equal((await createRt(mutateReq('/api/dashboard/rt', 'POST', { id_rw: 1, nomor_rt: '002' }))).status, 201);
@@ -222,8 +221,7 @@ test('RT & RW endpoints handle listing, creation, and conflict responses cleanly
   global.fetch = async () => Response.json({ message: 'RT masih memiliki warga.' }, { status: 409 });
   assert.equal((await deleteRt(mutateReq('/api/dashboard/rt/1', 'DELETE'), { params: Promise.resolve({ id: '1' }) })).status, 409);
 
-  global.fetch = async () => Response.json({ message: 'RW masih memiliki RT.' }, { status: 409 });
-  assert.equal((await deleteRw(mutateReq('/api/dashboard/rw/1', 'DELETE'), { params: Promise.resolve({ id: '1' }) })).status, 409);
+  assert.equal((await deleteRw(mutateReq('/api/dashboard/rw/1', 'DELETE'), { params: Promise.resolve({ id: '1' }) })).status, 405);
 });
 
 test('Account management endpoints fetch accounts, update roles, and update status', async () => {
