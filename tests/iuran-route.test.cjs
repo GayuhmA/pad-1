@@ -197,7 +197,7 @@ test('payment submission maps pending and backend validation conflicts to action
   });
   assert.equal(invalid.status, 422);
   assert.deepEqual(await invalid.json(), {
-    message: 'Pembayaran tidak valid. Pastikan nominal sesuai tagihan dan bukti bayar memenuhi ketentuan.',
+    message: 'Pembayaran tidak valid. Pastikan nominal dan bukti bayar memenuhi ketentuan.',
   });
 });
 
