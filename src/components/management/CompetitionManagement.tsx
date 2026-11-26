@@ -1,12 +1,8 @@
 'use client';
 
 import { Fragment, useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
-import {
-  DashboardCardGridSkeleton,
-  DashboardMetricSkeleton,
-  DashboardSkeletonFrame,
-  DashboardTableSkeleton,
-} from '@/components/management/DashboardLoadingSkeleton';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { DashboardCompetitionsSkeleton } from '@/components/management/DashboardLoadingSkeleton';
 import { Icon, ManagementLayout } from '@/components/management/ManagementDashboard';
 import { Modal } from '@/components/Modal';
 import {
@@ -17,6 +13,9 @@ import {
   restoreManagementLomba,
   updateManagementLomba,
 } from '@/lib/api/management-lomba';
+import { STALE_TIME } from '@/lib/query-client';
+import { queryKeys } from '@/lib/query-keys';
+import { useAuthStore } from '@/stores/auth-store';
 import type {
   CompetitionStatus,
   LombaCategoryOption,
@@ -383,19 +382,9 @@ function CompetitionFormModal({
 }
 
 export function CompetitionManagement({ role, userName }: { role: 'admin' | 'panitia'; userName: string }) {
-  const [competitions, setCompetitions] = useState<ManagementCompetition[]>([]);
-  const [archived, setArchived] = useState<ManagementArchivedCompetition[]>([]);
-  const [categories, setCategories] = useState<LombaCategoryOption[]>(DEFAULT_CATEGORIES);
-  const [stats, setStats] = useState<ManagementLombaStatistik>({
-    total_lomba: 0,
-    lomba_berlangsung: 0,
-    lomba_mendatang: 0,
-    lomba_selesai: 0,
-  });
+  const queryClient = useQueryClient();
+  const userId = useAuthStore((state) => state.user?.id);
 
-  const [loading, setLoading] = useState(true);
-  const [hasLoaded, setHasLoaded] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -420,44 +409,40 @@ export function CompetitionManagement({ role, userName }: { role: 'admin' | 'pan
     }
   }, [saving]);
 
-  const reload = useCallback(async (showSpinner = true) => {
-    if (showSpinner) setLoading(true);
-    try {
-      const response = await getManagementLomba(role);
-      setCompetitions(response.data.competitions ?? []);
-      setArchived(response.data.archived ?? []);
-      if (response.data.categories?.length) setCategories(response.data.categories);
-      if (response.data.statistik) setStats(response.data.statistik);
-      setHasLoaded(true);
-      setLoadError(null);
-    } catch (err: unknown) {
-      setLoadError(err instanceof Error ? err.message : 'Daftar lomba gagal dimuat.');
-    } finally {
-      if (showSpinner) setLoading(false);
-    }
-  }, [role]);
+  const lombaQuery = useQuery({
+    queryKey: queryKeys.managementLomba(userId),
+    queryFn: ({ signal }) => getManagementLomba(role, signal).then((res) => res.data),
+    staleTime: STALE_TIME.MODERATE,
+  });
 
-  useEffect(() => {
-    const controller = new AbortController();
-    getManagementLomba(role, controller.signal)
-      .then((response) => {
-        setCompetitions(response.data.competitions ?? []);
-        setArchived(response.data.archived ?? []);
-        if (response.data.categories?.length) setCategories(response.data.categories);
-        if (response.data.statistik) setStats(response.data.statistik);
-        setHasLoaded(true);
-        setLoadError(null);
-      })
-      .catch((err: unknown) => {
-        if (!controller.signal.aborted) {
-          setLoadError(err instanceof Error ? err.message : 'Daftar lomba gagal dimuat.');
-        }
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
-  }, [role]);
+  const competitions = useMemo(() => lombaQuery.data?.competitions ?? [], [lombaQuery.data]);
+  const archived = useMemo(() => lombaQuery.data?.archived ?? [], [lombaQuery.data]);
+  const categories = useMemo(
+    () => (lombaQuery.data?.categories?.length ? lombaQuery.data.categories : DEFAULT_CATEGORIES),
+    [lombaQuery.data],
+  );
+  const stats: ManagementLombaStatistik = lombaQuery.data?.statistik ?? {
+    total_lomba: 0,
+    lomba_berlangsung: 0,
+    lomba_mendatang: 0,
+    lomba_selesai: 0,
+  };
+  const loading = lombaQuery.isLoading;
+  const hasLoaded = lombaQuery.isSuccess;
+  const loadError = lombaQuery.error
+    ? (lombaQuery.error instanceof Error ? lombaQuery.error.message : 'Daftar lomba gagal dimuat.')
+    : null;
+
+  const reload = useCallback(async (showSpinner = true) => {
+    if (showSpinner) {
+      await lombaQuery.refetch();
+      return;
+    }
+    await queryClient.invalidateQueries({ queryKey: ['management', 'lomba'] });
+    void queryClient.invalidateQueries({ queryKey: ['management', 'dashboard'] });
+    void queryClient.invalidateQueries({ queryKey: ['lomba'] });
+    void queryClient.invalidateQueries({ queryKey: ['beranda'] });
+  }, [lombaQuery, queryClient]);
 
   useEffect(() => {
     if (!toast) return;
@@ -654,11 +639,7 @@ export function CompetitionManagement({ role, userName }: { role: 'admin' | 'pan
       </section>
 
       {loading && !hasLoaded ? (
-        <DashboardSkeletonFrame label="Memuat data lomba…">
-          <DashboardMetricSkeleton count={4} merged />
-          <DashboardTableSkeleton columns={7} rows={5} tabCount={0} hasSelectFilter />
-          <DashboardCardGridSkeleton titleWidth="w-40" cards={4} gridClass="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" />
-        </DashboardSkeletonFrame>
+        <DashboardCompetitionsSkeleton />
       ) : hasLoaded ? (
         <>
           <section aria-label="Ringkasan lomba" className="mb-6 grid grid-cols-2 overflow-hidden rounded-2xl border border-primary-100 bg-white shadow-[0_3px_16px_rgba(34,24,24,0.025)] lg:grid-cols-4">

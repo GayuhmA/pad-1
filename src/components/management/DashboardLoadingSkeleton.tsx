@@ -331,3 +331,41 @@ export function DashboardMessageSkeleton() {
   );
 }
 
+export function DashboardCompetitionsSkeleton() {
+  return (
+    <DashboardSkeletonFrame label="Memuat data lomba…">
+      <DashboardMetricSkeleton count={4} merged />
+      <DashboardTableSkeleton columns={7} rows={5} tabCount={0} hasSelectFilter />
+      <DashboardCardGridSkeleton titleWidth="w-40" cards={4} gridClass="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" />
+    </DashboardSkeletonFrame>
+  );
+}
+
+export function DashboardRegistrationsSkeleton() {
+  return (
+    <DashboardSkeletonFrame label="Memuat data pendaftaran…">
+      <DashboardMetricSkeleton count={4} merged />
+      <DashboardTableSkeleton columns={6} rows={5} tabCount={5} />
+      <DashboardCardGridSkeleton titleWidth="w-56" cards={3} />
+    </DashboardSkeletonFrame>
+  );
+}
+
+export function DashboardWargaSkeleton() {
+  return (
+    <DashboardSkeletonFrame label="Memuat data warga…">
+      <DashboardMetricSkeleton count={4} />
+      <DashboardTableSkeleton columns={6} rows={6} tabCount={3} hasSelectFilter />
+    </DashboardSkeletonFrame>
+  );
+}
+
+export function DashboardPanitiaSkeleton() {
+  return (
+    <DashboardSkeletonFrame label="Memuat data akun dan panitia…">
+      <DashboardMetricSkeleton count={4} />
+      <DashboardTableSkeleton columns={5} rows={6} tabCount={4} hasSelectFilter />
+    </DashboardSkeletonFrame>
+  );
+}
+

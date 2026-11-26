@@ -1,11 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  DashboardMetricSkeleton,
-  DashboardSkeletonFrame,
-  DashboardTableSkeleton,
-} from '@/components/management/DashboardLoadingSkeleton';
+import { useEffect, useMemo, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { DashboardPanitiaSkeleton } from '@/components/management/DashboardLoadingSkeleton';
 import { Icon, ManagementLayout } from '@/components/management/ManagementDashboard';
 import { Modal } from '@/components/Modal';
 import {
@@ -13,6 +10,8 @@ import {
   updateAdminAkunRole,
   updateAdminAkunStatus,
 } from '@/lib/api/management-admin';
+import { STALE_TIME } from '@/lib/query-client';
+import { queryKeys } from '@/lib/query-keys';
 import { useAuthStore } from '@/stores/auth-store';
 import type {
   AccountStatus,
@@ -67,61 +66,45 @@ function StatusBadge({ status }: { status: AccountStatus }) {
 export function PanitiaManagement({ role, userName }: { role: 'admin' | 'panitia'; userName: string }) {
   const currentUserId = useAuthStore((state) => state.user?.id ?? null);
 
-  const [akunList, setAkunList] = useState<AkunItem[]>([]);
-  const [roleOptions, setRoleOptions] = useState<RoleOption[]>(DEFAULT_ROLE_OPTIONS);
-  const [metrics, setMetrics] = useState<AkunMetrics>(EMPTY_METRICS);
-
   const [roleTab, setRoleTab] = useState<RoleFilterTab>('Semua');
   const [statusFilter, setStatusFilter] = useState<'Semua' | AccountStatus>('Semua');
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
 
-  const [loading, setLoading] = useState(true);
-  const [hasLoaded, setHasLoaded] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
+  const queryClient = useQueryClient();
   const [roleDialog, setRoleDialog] = useState<{ akun: AkunItem; selectedRoleId: number } | null>(null);
   const [statusDialog, setStatusDialog] = useState<{ akun: AkunItem; nextStatus: AccountStatus } | null>(null);
   const [mutating, setMutating] = useState(false);
   const [mutationError, setMutationError] = useState<string | null>(null);
 
-  const reload = useCallback(async (showSpinner = true) => {
-    if (showSpinner) setLoading(true);
-    try {
-      const response = await getAdminAkun({ per_page: 100 });
-      setAkunList(response.data.akun);
-      setRoleOptions(response.data.roleOptions.length ? response.data.roleOptions : DEFAULT_ROLE_OPTIONS);
-      setMetrics(response.data.metrics);
-      setHasLoaded(true);
-      setLoadError(null);
-    } catch (error) {
-      setLoadError(error instanceof Error ? error.message : 'Daftar akun gagal dimuat.');
-    } finally {
-      if (showSpinner) setLoading(false);
-    }
-  }, []);
+  const akunQuery = useQuery({
+    queryKey: queryKeys.managementAkun({}),
+    queryFn: ({ signal }) => getAdminAkun({ per_page: 100 }, signal).then((res) => res.data),
+    staleTime: STALE_TIME.MODERATE,
+  });
 
-  useEffect(() => {
-    const controller = new AbortController();
-    getAdminAkun({ per_page: 100 }, controller.signal)
-      .then((response) => {
-        setAkunList(response.data.akun);
-        setRoleOptions(response.data.roleOptions.length ? response.data.roleOptions : DEFAULT_ROLE_OPTIONS);
-        setMetrics(response.data.metrics);
-        setHasLoaded(true);
-        setLoadError(null);
-      })
-      .catch((error: unknown) => {
-        if (!controller.signal.aborted) {
-          setLoadError(error instanceof Error ? error.message : 'Daftar akun gagal dimuat.');
-        }
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
-  }, []);
+  const akunList = useMemo(() => akunQuery.data?.akun ?? [], [akunQuery.data]);
+  const roleOptions = useMemo(
+    () => (akunQuery.data?.roleOptions?.length ? akunQuery.data.roleOptions : DEFAULT_ROLE_OPTIONS),
+    [akunQuery.data],
+  );
+  const metrics = akunQuery.data?.metrics ?? EMPTY_METRICS;
+  const loading = akunQuery.isLoading;
+  const hasLoaded = akunQuery.isSuccess;
+  const loadError = akunQuery.error
+    ? (akunQuery.error instanceof Error ? akunQuery.error.message : 'Daftar akun gagal dimuat.')
+    : null;
+
+  const reload = async (showSpinner = true) => {
+    if (showSpinner) {
+      await akunQuery.refetch();
+      return;
+    }
+    await queryClient.invalidateQueries({ queryKey: ['management', 'akun'] });
+    void queryClient.invalidateQueries({ queryKey: ['management', 'warga'] });
+  };
 
   useEffect(() => {
     if (!toast) return;
@@ -239,10 +222,7 @@ export function PanitiaManagement({ role, userName }: { role: 'admin' | 'panitia
       )}
 
       {loading && !hasLoaded ? (
-        <DashboardSkeletonFrame label="Memuat data akun dan panitia…">
-          <DashboardMetricSkeleton count={4} />
-          <DashboardTableSkeleton columns={5} rows={6} tabCount={4} hasSelectFilter />
-        </DashboardSkeletonFrame>
+        <DashboardPanitiaSkeleton />
       ) : hasLoaded ? (
         <>
           <section aria-label="Ringkasan akun dan panitia" className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-4">

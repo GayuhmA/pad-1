@@ -16,7 +16,7 @@ import { useRequireManagementAuth } from '@/hooks/use-require-management-auth';
 import { getManagementRole, type ManagementRole } from '@/lib/management-role';
 import { useAuthStore } from '@/stores/auth-store';
 
-function NoManagementAccess({ role }: { role: string }) {
+export function NoManagementAccess({ role }: { role: string }) {
   return (
     <main className="flex min-h-screen items-center justify-center bg-[#FCF4F3] p-5">
       <section className="w-full max-w-md rounded-2xl border border-primary-100 bg-white p-8 text-center shadow-sm">
@@ -37,7 +37,7 @@ export function ManagementRoute({ page }: { page: 'dashboard' | 'competitions' |
   const status = useAuthStore((state) => state.status);
 
   if (status === 'error' && !user) return <SessionStatus />;
-  if (!isReady || !user) return <PageSkeleton variant="management" />;
+  if (!isReady || !user) return <PageSkeleton variant="management" managementPage={page} />;
   const role: ManagementRole | null = getManagementRole(user.role);
   if (!role) return <NoManagementAccess role={user.role} />;
   if ((page === 'warga' || page === 'panitia') && role !== 'admin') {

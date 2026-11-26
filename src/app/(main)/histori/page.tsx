@@ -1,19 +1,19 @@
 "use client";
 
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { useQuery } from "@tanstack/react-query";
 import { PageSkeleton } from "@/components/skeletons/PageSkeleton";
 import { getAlbums } from "@/lib/api/dokumentasi";
 import { getDaftarHistori, getDetailHistori } from "@/lib/api/histori";
 import { DAFTAR_ALBUM, DEFAULT_PLACEHOLDER } from "@/lib/data/histori";
+import { STALE_TIME } from "@/lib/query-client";
+import { queryKeys } from "@/lib/query-keys";
 import type {
-  DetailHistoriPeriode,
   LombaHistoriItem,
   PemenangLombaItem,
-  PeriodeHistoriItem,
 } from "@/types/histori";
-import type { AlbumDokumentasi } from "@/types/management-dokumentasi";
 
 interface ImageWithFallbackProps {
   src?: string;
@@ -92,113 +92,58 @@ function formatWinners(pemenangList: PemenangLombaItem[]): string {
 }
 
 export default function HistoriPage() {
-  const [periods, setPeriods] = useState<PeriodeHistoriItem[]>([]);
   const [selectedPeriodId, setSelectedPeriodId] = useState<number | null>(null);
-  const [detailData, setDetailData] = useState<DetailHistoriPeriode | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isDetailLoading, setIsDetailLoading] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [retryKey, setRetryKey] = useState(0);
   const [yearMenuOpen, setYearMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState<string>("");
-  const [albums, setAlbums] = useState<AlbumDokumentasi[]>([]);
-  const [isLoadingAlbums, setIsLoadingAlbums] = useState(true);
 
-  // Load periods list
-  useEffect(() => {
-    const controller = new AbortController();
-    async function loadPeriods() {
-      setIsLoading(true);
-      setLoadError(null);
-      try {
-        const response = await getDaftarHistori(undefined, controller.signal);
-        setPeriods(response.data);
-        if (response.data.length > 0) {
-          setSelectedPeriodId((curr) => {
-            if (curr && response.data.some((p) => p.id_periode === curr)) {
-              return curr;
-            }
-            return response.data[0].id_periode;
-          });
-        }
-      } catch (err) {
-        if (!controller.signal.aborted) {
-          setLoadError(
-            err instanceof Error ? err.message : "Daftar histori gagal dimuat.",
-          );
-        }
-      } finally {
-        if (!controller.signal.aborted) {
-          setIsLoading(false);
-        }
-      }
+  const periodsQuery = useQuery({
+    queryKey: queryKeys.historiList,
+    queryFn: ({ signal }) => getDaftarHistori(undefined, signal).then((res) => res.data),
+    staleTime: STALE_TIME.STATIC,
+  });
+
+  const periods = useMemo(() => periodsQuery.data ?? [], [periodsQuery.data]);
+  const effectivePeriodId = useMemo(() => {
+    if (selectedPeriodId && periods.some((p) => p.id_periode === selectedPeriodId)) {
+      return selectedPeriodId;
     }
-    void loadPeriods();
-    return () => controller.abort();
-  }, [retryKey]);
+    return periods[0]?.id_periode ?? null;
+  }, [periods, selectedPeriodId]);
 
-  // Load period detail
-  useEffect(() => {
-    if (!selectedPeriodId) return;
-    const controller = new AbortController();
-    async function loadDetail() {
-      setIsDetailLoading(true);
-      try {
-        const response = await getDetailHistori(
-          selectedPeriodId as number,
-          undefined,
-          controller.signal,
-        );
-        setDetailData(response.data);
-      } catch (err) {
-        if (!controller.signal.aborted) {
-          setLoadError(
-            err instanceof Error ? err.message : "Detail histori gagal dimuat.",
-          );
-        }
-      } finally {
-        if (!controller.signal.aborted) {
-          setIsDetailLoading(false);
-        }
-      }
-    }
-    void loadDetail();
-    return () => controller.abort();
-  }, [selectedPeriodId, retryKey]);
+  const detailQuery = useQuery({
+    queryKey: queryKeys.historiDetail(effectivePeriodId ?? 0),
+    queryFn: ({ signal }) => getDetailHistori(effectivePeriodId!, undefined, signal).then((res) => res.data),
+    enabled: effectivePeriodId !== null,
+    staleTime: STALE_TIME.STATIC,
+    placeholderData: (previousData) => previousData,
+  });
 
-  // Load albums from backend
-  useEffect(() => {
-    const controller = new AbortController();
-    setIsLoadingAlbums(true);
+  const albumsQuery = useQuery({
+    queryKey: queryKeys.albums(effectivePeriodId),
+    queryFn: ({ signal }) =>
+      getAlbums(effectivePeriodId ? { id_periode: effectivePeriodId } : undefined, signal)
+        .then((res) => res.data ?? []),
+    staleTime: STALE_TIME.STATIC,
+  });
 
-    getAlbums(
-      selectedPeriodId ? { id_periode: selectedPeriodId } : undefined,
-      controller.signal,
-    )
-      .then((res) => {
-        if (res.data) {
-          setAlbums(res.data);
-        }
-      })
-      .catch(() => {
-        // Fallback to static DAFTAR_ALBUM handled in useMemo
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) {
-          setIsLoadingAlbums(false);
-        }
-      });
-
-    return () => controller.abort();
-  }, [selectedPeriodId, retryKey]);
+  const detailData = detailQuery.data ?? null;
+  const albums = useMemo(() => albumsQuery.data ?? [], [albumsQuery.data]);
+  const isLoading = periodsQuery.isLoading;
+  const isDetailLoading = detailQuery.isLoading;
+  const isLoadingAlbums = albumsQuery.isLoading;
+  const loadError = periodsQuery.error
+    ? (periodsQuery.error instanceof Error ? periodsQuery.error.message : "Daftar histori gagal dimuat.")
+    : detailQuery.error
+      ? (detailQuery.error instanceof Error ? detailQuery.error.message : "Detail histori gagal dimuat.")
+      : null;
 
   const activePeriod = useMemo(() => {
     return (
       detailData ??
-      periods.find((p) => p.id_periode === selectedPeriodId) ??
+      periods.find((p) => p.id_periode === effectivePeriodId) ??
       null
     );
-  }, [detailData, periods, selectedPeriodId]);
+  }, [detailData, periods, effectivePeriodId]);
 
   const selectedYear = activePeriod?.tahun ?? "2026";
   const formattedDateRange = useMemo(() => {
@@ -251,7 +196,7 @@ export default function HistoriPage() {
   }, [detailData, searchQuery]);
 
   if (isLoading && !detailData && !loadError) {
-    return <PageSkeleton variant="generic" />;
+    return <PageSkeleton variant="histori" />;
   }
 
   return (
@@ -296,7 +241,7 @@ export default function HistoriPage() {
                     setYearMenuOpen(false);
                   }}
                   className={`px-4 py-2.5 rounded-xl text-xs md:text-sm font-bold text-left transition-colors cursor-pointer ${
-                    p.id_periode === selectedPeriodId
+                    p.id_periode === effectivePeriodId
                       ? "bg-primary-100 text-[#BA1B1B]"
                       : "text-neutral-700 hover:bg-neutral-50"
                   }`}
@@ -316,7 +261,11 @@ export default function HistoriPage() {
             <span>{loadError}</span>
             <button
               type="button"
-              onClick={() => setRetryKey((value) => value + 1)}
+              onClick={() => {
+                void periodsQuery.refetch();
+                if (effectivePeriodId) void detailQuery.refetch();
+                void albumsQuery.refetch();
+              }}
               className="rounded-lg bg-error-100 px-4 py-2 text-xs font-bold text-white cursor-pointer"
             >
               Coba Lagi

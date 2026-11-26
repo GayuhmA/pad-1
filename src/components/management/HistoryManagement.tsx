@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useMemo, useState, useEffect, type FormEvent } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   DashboardHistoryDetailSkeleton,
   DashboardHistorySkeleton,
@@ -16,10 +17,11 @@ import {
   updateHistoriPeriode,
   updatePemenang,
 } from '@/lib/api/histori';
+import { STALE_TIME } from '@/lib/query-client';
+import { queryKeys } from '@/lib/query-keys';
 import type {
   DetailHistoriPeriode,
   LombaHistoriItem,
-  PeriodeHistoriItem,
   PesertaLombaOption,
 } from '@/types/histori';
 
@@ -400,17 +402,12 @@ export function HistoryManagement({
   role: 'admin' | 'panitia';
   userName: string;
 }) {
-  const [periods, setPeriods] = useState<PeriodeHistoriItem[]>([]);
+  const queryClient = useQueryClient();
   const [selectedPeriodId, setSelectedPeriodId] = useState<number | null>(null);
-  const [periodDetail, setPeriodDetail] = useState<DetailHistoriPeriode | null>(null);
-  const [periodsRefreshKey, setPeriodsRefreshKey] = useState(0);
-  const [detailRefreshKey, setDetailRefreshKey] = useState(0);
 
-  const [isLoadingPeriods, setIsLoadingPeriods] = useState(true);
-  const [isLoadingDetail, setIsLoadingDetail] = useState(false);
   const [query, setQuery] = useState('');
   const [notice, setNotice] = useState('');
-  const [errorMessage, setErrorMessage] = useState('');
+  const [actionError, setActionError] = useState('');
 
   const [editingWinner, setEditingWinner] = useState<WinnerEntry | null>(null);
   const [isAddingWinner, setIsAddingWinner] = useState(false);
@@ -421,94 +418,47 @@ export function HistoryManagement({
   const [descriptionDraft, setDescriptionDraft] = useState('');
   const [isSavingDescription, setIsSavingDescription] = useState(false);
 
-  // Load periods on mount / retry
-  useEffect(() => {
-    let active = true;
+  const periodsQuery = useQuery({
+    queryKey: queryKeys.managementHistoriList,
+    queryFn: ({ signal }) => getDaftarHistori(undefined, signal).then((res) => res.data ?? []),
+    staleTime: STALE_TIME.STATIC,
+  });
 
-    getDaftarHistori()
-      .then((res) => {
-        if (!active) return;
-        const list = res.data ?? [];
-        setPeriods(list);
-        if (list.length > 0) {
-          setIsLoadingDetail(true);
-        }
-        setSelectedPeriodId((prev) => {
-          if (prev !== null && list.some((item) => item.id_periode === prev)) return prev;
-          return list[0]?.id_periode ?? null;
-        });
-        setErrorMessage('');
-      })
-      .catch((err: unknown) => {
-        if (!active) return;
-        setErrorMessage(
-          err instanceof Error
-            ? err.message
-            : 'Gagal memuat daftar periode histori perayaan.',
-        );
-      })
-      .finally(() => {
-        if (active) setIsLoadingPeriods(false);
-      });
+  const periods = useMemo(() => periodsQuery.data ?? [], [periodsQuery.data]);
+  const effectivePeriodId = useMemo(() => {
+    if (selectedPeriodId !== null && periods.some((item) => item.id_periode === selectedPeriodId)) {
+      return selectedPeriodId;
+    }
+    return periods[0]?.id_periode ?? null;
+  }, [periods, selectedPeriodId]);
 
-    return () => {
-      active = false;
-    };
-  }, [periodsRefreshKey]);
+  const detailQuery = useQuery({
+    queryKey: queryKeys.managementHistoriDetail(effectivePeriodId ?? 0),
+    queryFn: ({ signal }) =>
+      getDetailHistori(effectivePeriodId!, undefined, signal).then((res) => res.data),
+    enabled: effectivePeriodId !== null,
+    staleTime: STALE_TIME.STATIC,
+    placeholderData: (previousData) => previousData,
+  });
 
-  // Function to load detail after manual mutations
-  const fetchDetail = useCallback(
-    async (id: number) => {
-      setIsLoadingDetail(true);
-      setPeriodDetail(null);
-      setErrorMessage('');
-      try {
-        const res = await getDetailHistori(id);
-        setPeriodDetail(res.data);
-      } catch (err) {
-        setErrorMessage(
-          err instanceof Error
-            ? err.message
-            : 'Gagal memuat detail histori kegiatan perayaan.',
-        );
-      } finally {
-        setIsLoadingDetail(false);
-      }
-    },
-    [],
-  );
-
-  useEffect(() => {
-    if (selectedPeriodId === null) return;
-    let active = true;
-
-    getDetailHistori(selectedPeriodId)
-      .then((res) => {
-        if (!active) return;
-        setPeriodDetail(res.data);
-        setErrorMessage('');
-      })
-      .catch((err: unknown) => {
-        if (!active) return;
-        setErrorMessage(
-          err instanceof Error
-            ? err.message
-            : 'Gagal memuat detail histori kegiatan perayaan.',
-        );
-      })
-      .finally(() => {
-        if (active) setIsLoadingDetail(false);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [selectedPeriodId, detailRefreshKey]);
+  const periodDetail = detailQuery.data ?? null;
+  const isLoadingPeriods = periodsQuery.isLoading;
+  const isLoadingDetail = detailQuery.isLoading;
+  const errorMessage = actionError
+    || (periodsQuery.error
+      ? (periodsQuery.error instanceof Error
+        ? periodsQuery.error.message
+        : 'Gagal memuat daftar periode histori perayaan.')
+      : detailQuery.error
+        ? (detailQuery.error instanceof Error
+          ? detailQuery.error.message
+          : 'Gagal memuat detail histori kegiatan perayaan.')
+        : '');
 
   const activePeriod = useMemo(() => {
     if (!periods.length) return null;
-    return periods.find((p) => p.id_periode === selectedPeriodId) ?? periods[0] ?? null;
-  }, [periods, selectedPeriodId]);
+    return periods.find((p) => p.id_periode === effectivePeriodId) ?? periods[0] ?? null;
+  }, [periods, effectivePeriodId]);
 
   const dateRangeText = useMemo(() => {
     if (!activePeriod) return '';
@@ -590,21 +540,24 @@ export function HistoryManagement({
 
   async function saveDescription(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selectedPeriodId) return;
+    if (!effectivePeriodId) return;
 
     setIsSavingDescription(true);
-    setErrorMessage('');
+    setActionError('');
     try {
-      await updateHistoriPeriode(selectedPeriodId, {
+      await updateHistoriPeriode(effectivePeriodId, {
         deskripsi: descriptionDraft.trim(),
       });
-      setPeriodDetail((prev) =>
-        prev ? { ...prev, deskripsi: descriptionDraft.trim() } : null,
+      queryClient.setQueryData<DetailHistoriPeriode | undefined>(
+        queryKeys.managementHistoriDetail(effectivePeriodId),
+        (prev) => (prev ? { ...prev, deskripsi: descriptionDraft.trim() } : prev),
       );
+      void queryClient.invalidateQueries({ queryKey: ['management', 'histori'] });
+      void queryClient.invalidateQueries({ queryKey: ['histori'] });
       setIsEditingDescription(false);
       setNotice('Ringkasan perayaan berhasil diperbarui di backend.');
     } catch (err) {
-      setErrorMessage(
+      setActionError(
         err instanceof Error ? err.message : 'Gagal memperbarui ringkasan perayaan.',
       );
     } finally {
@@ -617,24 +570,29 @@ export function HistoryManagement({
 
     if (!deletingWinner.idPemenang) {
       // Local fallback removal
-      setPeriodDetail((prev) => {
-        if (!prev) return null;
-        return {
-          ...prev,
-          lomba: prev.lomba.map((l) =>
-            l.id_lomba === deletingWinner.idLomba
-              ? {
-                  ...l,
-                  pemenang: l.pemenang.filter(
-                    (p) =>
-                      p.peringkat !== deletingWinner.peringkat ||
-                      p.nama_pemenang !== deletingWinner.winner,
-                  ),
-                }
-              : l,
-          ),
-        };
-      });
+      if (effectivePeriodId !== null) {
+        queryClient.setQueryData<DetailHistoriPeriode | undefined>(
+          queryKeys.managementHistoriDetail(effectivePeriodId),
+          (prev) => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              lomba: prev.lomba.map((l) =>
+                l.id_lomba === deletingWinner.idLomba
+                  ? {
+                      ...l,
+                      pemenang: l.pemenang.filter(
+                        (p) =>
+                          p.peringkat !== deletingWinner.peringkat ||
+                          p.nama_pemenang !== deletingWinner.winner,
+                      ),
+                    }
+                  : l,
+              ),
+            };
+          },
+        );
+      }
       setNotice(`Rekap pemenang ${deletingWinner.competition} dihapus.`);
       setDeletingWinner(null);
       return;
@@ -645,11 +603,10 @@ export function HistoryManagement({
       await deletePemenang(deletingWinner.idPemenang);
       setNotice(`Rekap pemenang ${deletingWinner.competition} berhasil dihapus.`);
       setDeletingWinner(null);
-      if (selectedPeriodId !== null) {
-        await fetchDetail(selectedPeriodId);
-      }
+      void queryClient.invalidateQueries({ queryKey: ['management', 'histori'] });
+      void queryClient.invalidateQueries({ queryKey: ['histori'] });
     } catch (err) {
-      setErrorMessage(
+      setActionError(
         err instanceof Error ? err.message : 'Gagal menghapus rekap pemenang.',
       );
     } finally {
@@ -679,9 +636,8 @@ export function HistoryManagement({
             <button
               type="button"
               onClick={() => {
-                setIsLoadingPeriods(true);
-                setErrorMessage('');
-                setPeriodsRefreshKey((key) => key + 1);
+                setActionError('');
+                void periodsQuery.refetch();
               }}
               className="mt-4 inline-flex min-h-10 items-center rounded-xl bg-primary-600 px-4 text-sm font-semibold text-white hover:bg-primary-700"
             >
@@ -700,15 +656,13 @@ export function HistoryManagement({
               </label>
               <select
                 id="history-event"
-                value={selectedPeriodId ?? ''}
+                value={effectivePeriodId ?? ''}
                 disabled={isLoadingPeriods}
                 onChange={(e) => {
-                  setIsLoadingDetail(true);
                   setSelectedPeriodId(Number(e.target.value));
-                  setPeriodDetail(null);
                   setQuery('');
                   setNotice('');
-                  setErrorMessage('');
+                  setActionError('');
                   setIsEditingDescription(false);
                 }}
                 className="h-10 min-w-48 rounded-xl border border-neutral-200 bg-white px-3.5 text-sm font-semibold text-primary-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
@@ -976,12 +930,12 @@ export function HistoryManagement({
         )}
       </div>
 
-      {(isAddingWinner || editingWinner) && selectedPeriodId !== null && (
+      {(isAddingWinner || editingWinner) && effectivePeriodId !== null && (
         <WinnerForm
           key={editingWinner?.id ?? 'new'}
           initial={editingWinner}
           lombaList={periodDetail?.lomba ?? []}
-          idPeriode={selectedPeriodId}
+          idPeriode={effectivePeriodId}
           role={role}
           onClose={() => {
             setIsAddingWinner(false);
@@ -991,8 +945,8 @@ export function HistoryManagement({
             setIsAddingWinner(false);
             setEditingWinner(null);
             setNotice(msg);
-            setIsLoadingDetail(true);
-            setDetailRefreshKey((key) => key + 1);
+            void queryClient.invalidateQueries({ queryKey: ['management', 'histori'] });
+            void queryClient.invalidateQueries({ queryKey: ['histori'] });
           }}
         />
       )}

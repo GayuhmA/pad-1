@@ -2,6 +2,7 @@
 
 import Image from 'next/image';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   DashboardDocumentationSkeleton,
   SkeletonBone,
@@ -18,6 +19,8 @@ import {
   updateAlbum,
   updateAlbumWithCover,
 } from '@/lib/api/dokumentasi';
+import { STALE_TIME } from '@/lib/query-client';
+import { queryKeys } from '@/lib/query-keys';
 import type { AlbumDokumentasi, DetailAlbumDokumentasi } from '@/types/management-dokumentasi';
 
 const accents = [
@@ -684,51 +687,33 @@ function CreateAlbumModal({
 }
 
 export function DocumentationManagement({ role, userName }: { role: 'admin' | 'panitia'; userName: string }) {
-  const [albums, setAlbums] = useState<AlbumDokumentasi[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [hasLoaded, setHasLoaded] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
 
   const [query, setQuery] = useState('');
   const [selectedAlbum, setSelectedAlbum] = useState<AlbumDokumentasi | null>(null);
   const [createModalOpen, setCreateModalOpen] = useState(false);
 
-  const loadData = useCallback(async (showLoader = true) => {
-    if (showLoader) setLoading(true);
-    try {
-      const res = await getAlbums();
-      setAlbums(res.data || []);
-      setHasLoaded(true);
-      setLoadError(null);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Gagal memuat album dokumentasi.';
-      setLoadError(message);
-    } finally {
-      if (showLoader) setLoading(false);
-    }
-  }, []);
+  const albumsQuery = useQuery({
+    queryKey: queryKeys.managementDokumentasi,
+    queryFn: ({ signal }) => getAlbums(undefined, signal).then((res) => res.data || []),
+    staleTime: STALE_TIME.STATIC,
+  });
 
-  useEffect(() => {
-    let active = true;
-    getAlbums()
-      .then((res) => {
-        if (!active) return;
-        setAlbums(res.data || []);
-        setHasLoaded(true);
-        setLoadError(null);
-      })
-      .catch((err: unknown) => {
-        if (!active) return;
-        const message = err instanceof Error ? err.message : 'Gagal memuat album dokumentasi.';
-        setLoadError(message);
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
+  const albums = useMemo(() => albumsQuery.data ?? [], [albumsQuery.data]);
+  const loading = albumsQuery.isLoading;
+  const hasLoaded = albumsQuery.isSuccess;
+  const loadError = albumsQuery.error
+    ? (albumsQuery.error instanceof Error ? albumsQuery.error.message : 'Gagal memuat album dokumentasi.')
+    : null;
+
+  const loadData = useCallback(async (showLoader = true) => {
+    if (showLoader) {
+      await albumsQuery.refetch();
+      return;
+    }
+    await queryClient.invalidateQueries({ queryKey: queryKeys.managementDokumentasi });
+    void queryClient.invalidateQueries({ queryKey: ['albums'] });
+  }, [albumsQuery, queryClient]);
 
   const closeAlbum = useCallback(() => setSelectedAlbum(null), []);
 

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, type ReactNode } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '@/stores/auth-store';
 import { createSessionChannel, SESSION_EVENT_KEY } from '@/lib/session-sync';
 import { useAppStore } from '@/stores/app-store';
@@ -9,6 +10,8 @@ import { useNotificationStore } from '@/stores/notification-store';
 import { getNavbarRightAction } from '@/lib/management-role';
 
 export function SessionProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient();
+
   useEffect(() => {
     // Legacy localStorage tokens are intentionally not trusted or migrated.
     try { localStorage.removeItem('auth_token'); } catch { /* Storage can be disabled. */ }
@@ -32,7 +35,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     document.addEventListener('visibilitychange', revalidate);
     const timer = window.setInterval(revalidate, 60_000);
     const unsubscribe = useAuthStore.subscribe((state, previous) => {
-      if (state.user?.id !== previous.user?.id) {
+      const userChanged = state.user?.id !== previous.user?.id;
+      const loggedOut = state.status === 'unauthenticated' && previous.status !== 'unauthenticated';
+      if (userChanged || loggedOut) {
+        queryClient.clear();
         useProfileStore.getState().clearError();
         useAppStore.getState().closeMobileMenu();
         const notifications = useNotificationStore.getState();
@@ -51,6 +57,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       window.removeEventListener('pageshow', revalidate);
       document.removeEventListener('visibilitychange', revalidate);
     };
-  }, []);
+  }, [queryClient]);
   return children;
 }

@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
 import { Modal } from "@/components/Modal";
@@ -10,6 +11,8 @@ import { ApiRequestError } from "@/lib/api/client";
 import { daftarLomba, getDaftarLomba } from "@/lib/api/lomba";
 import { getRiwayatPendaftaran } from "@/lib/api/pendaftaran";
 import { canRegisterCompetition, getManagementRole } from "@/lib/management-role";
+import { STALE_TIME } from "@/lib/query-client";
+import { queryKeys } from "@/lib/query-keys";
 import { useAuthStore } from "@/stores/auth-store";
 import {
   buildAgendaDateTabs,
@@ -90,15 +93,11 @@ function scheduleTime(jadwal: JadwalLomba): string {
 }
 
 export default function LombaPage() {
+  const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);
   const birthDate = user?.tanggal_lahir ?? null;
   const isManagementUser = getManagementRole(user?.role) !== null;
   const allowRegistration = canRegisterCompetition(user?.role);
-  const [lombaList, setLombaList] = useState<Lomba[]>([]);
-  const [availableDates, setAvailableDates] = useState<string[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [retryKey, setRetryKey] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeStatus, setActiveStatus] = useState<StatusFilter>("Semua");
   const [activeCategory, setActiveCategory] = useState("Semua");
@@ -113,44 +112,44 @@ export default function LombaPage() {
     return () => window.clearInterval(interval);
   }, []);
 
-  useEffect(() => {
-    const controller = new AbortController();
-    async function load() {
-      setIsLoading(true);
-      setLoadError(null);
-      try {
-        const [response, history] = await Promise.all([
-          getDaftarLomba(controller.signal),
-          isManagementUser
-            ? Promise.resolve(null)
-            : getRiwayatPendaftaran(controller.signal).catch(() => null),
-        ]);
-        if (controller.signal.aborted) return;
-        const activeLombaIds = history
-          ? new Set(history.data
-            .filter((item) => normalize(item.status) !== "dibatalkan")
-            .map((item) => item.lomba.id_lomba))
-          : null;
-        setLombaList(activeLombaIds
+  const lombaQuery = useQuery({
+    queryKey: queryKeys.lomba(user?.id),
+    queryFn: async ({ signal }) => {
+      const [response, history] = await Promise.all([
+        getDaftarLomba(signal),
+        isManagementUser
+          ? Promise.resolve(null)
+          : getRiwayatPendaftaran(signal).catch(() => null),
+      ]);
+      const activeLombaIds = history
+        ? new Set(history.data
+          .filter((item) => normalize(item.status) !== "dibatalkan")
+          .map((item) => item.lomba.id_lomba))
+        : null;
+      return {
+        lombaList: activeLombaIds
           ? response.data.map((item) => ({ ...item, sudah_mendaftar: activeLombaIds.has(item.id_lomba) }))
-          : response.data);
-        setAvailableDates(response.tanggal_tersedia);
-      } catch (error) {
-        if (controller.signal.aborted) return;
-        setLoadError(error instanceof Error ? error.message : "Daftar lomba gagal dimuat.");
-      } finally {
-        if (!controller.signal.aborted) setIsLoading(false);
-      }
-    }
-    void load();
-    return () => controller.abort();
-  }, [retryKey, isManagementUser]);
+          : response.data,
+        availableDates: response.tanggal_tersedia,
+      };
+    },
+    staleTime: STALE_TIME.MODERATE,
+  });
+
+  const lombaList = useMemo(() => lombaQuery.data?.lombaList ?? [], [lombaQuery.data]);
+  const availableDates = useMemo(() => lombaQuery.data?.availableDates ?? [], [lombaQuery.data]);
+  const isLoading = lombaQuery.isLoading;
+  const loadError = lombaQuery.error
+    ? (lombaQuery.error instanceof Error ? lombaQuery.error.message : "Daftar lomba gagal dimuat.")
+    : null;
 
   useEffect(() => {
-    const refreshRegistrations = () => setRetryKey((value) => value + 1);
+    const refreshRegistrations = () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.lomba(user?.id) });
+    };
     window.addEventListener("pad-registration-changed", refreshRegistrations);
     return () => window.removeEventListener("pad-registration-changed", refreshRegistrations);
-  }, []);
+  }, [queryClient, user?.id]);
 
   useEffect(() => {
     if (!notice) return;
@@ -215,9 +214,17 @@ export default function LombaPage() {
     setIsSubmitting(true);
     try {
       const response = await daftarLomba(target.id_lomba);
-      setLombaList((items) => items.map((item) => item.id_lomba === target.id_lomba
-        ? { ...item, sudah_mendaftar: true }
-        : item));
+      queryClient.setQueryData<{ lombaList: Lomba[]; availableDates: string[] }>(
+        queryKeys.lomba(user?.id),
+        (current) => current ? {
+          ...current,
+          lombaList: current.lombaList.map((item) => item.id_lomba === target.id_lomba
+            ? { ...item, sudah_mendaftar: true }
+            : item),
+        } : current,
+      );
+      void queryClient.invalidateQueries({ queryKey: queryKeys.lomba(user?.id) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.pendaftaran(user?.id) });
       setSelectedLomba(null);
       setNotice({ type: "success", message: response.message || `Pendaftaran ${target.nama_lomba} berhasil dikirim.` });
     } catch (error) {
@@ -323,7 +330,7 @@ export default function LombaPage() {
           <section role="alert" className="rounded-2xl bg-white p-8 text-center shadow-sm">
             <h2 className="text-h6 font-bold text-neutral-900">Daftar lomba belum dapat dimuat</h2>
             <p className="mt-2 text-body-2 text-neutral-600">{loadError}</p>
-            <Button className="mt-5" onClick={() => setRetryKey((value) => value + 1)}>Coba Lagi</Button>
+            <Button className="mt-5" onClick={() => void lombaQuery.refetch()}>Coba Lagi</Button>
           </section>
         ) : (
           <>

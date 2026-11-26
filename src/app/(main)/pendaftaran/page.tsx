@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
 import { Modal } from "@/components/Modal";
@@ -11,6 +12,8 @@ import { ApiRequestError } from "@/lib/api/client";
 import { batalkanPendaftaran, getRiwayatPendaftaran } from "@/lib/api/pendaftaran";
 import { formatTanggalIndonesia, formatWaktu } from "@/lib/lomba-date";
 import { getManagementRole } from "@/lib/management-role";
+import { STALE_TIME } from "@/lib/query-client";
+import { queryKeys } from "@/lib/query-keys";
 import { useAuthStore } from "@/stores/auth-store";
 import type { RiwayatJadwalLomba, RiwayatPendaftaran } from "@/types/pendaftaran";
 
@@ -69,13 +72,10 @@ function statusBadge(status: string): {
 }
 
 export default function PendaftaranPage() {
+  const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);
   const managementRole = getManagementRole(user?.role);
   const isManagementUser = managementRole !== null;
-  const [items, setItems] = useState<RiwayatPendaftaran[]>([]);
-  const [isLoading, setIsLoading] = useState(!isManagementUser);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [retryKey, setRetryKey] = useState(0);
   const [activeStatus, setActiveStatus] = useState("Semua");
   const [searchQuery, setSearchQuery] = useState("");
   const [cancelTarget, setCancelTarget] = useState<RiwayatPendaftaran | null>(null);
@@ -83,28 +83,18 @@ export default function PendaftaranPage() {
   const [cancelError, setCancelError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (isManagementUser) return;
+  const pendaftaranQuery = useQuery({
+    queryKey: queryKeys.pendaftaran(user?.id),
+    queryFn: ({ signal }) => getRiwayatPendaftaran(signal).then((response) => response.data),
+    enabled: !isManagementUser,
+    staleTime: STALE_TIME.DYNAMIC,
+  });
 
-    const controller = new AbortController();
-
-    async function load() {
-      setIsLoading(true);
-      setLoadError(null);
-      try {
-        const response = await getRiwayatPendaftaran(controller.signal);
-        setItems(response.data);
-      } catch (error) {
-        if (controller.signal.aborted) return;
-        setLoadError(error instanceof Error ? error.message : "Riwayat pendaftaran gagal dimuat.");
-      } finally {
-        if (!controller.signal.aborted) setIsLoading(false);
-      }
-    }
-
-    void load();
-    return () => controller.abort();
-  }, [retryKey, isManagementUser]);
+  const items = useMemo(() => pendaftaranQuery.data ?? [], [pendaftaranQuery.data]);
+  const isLoading = !isManagementUser && pendaftaranQuery.isLoading;
+  const loadError = pendaftaranQuery.error
+    ? (pendaftaranQuery.error instanceof Error ? pendaftaranQuery.error.message : "Riwayat pendaftaran gagal dimuat.")
+    : null;
 
   useEffect(() => {
     if (!notice) return;
@@ -120,16 +110,14 @@ export default function PendaftaranPage() {
 
     try {
       const response = await batalkanPendaftaran(target.id_pendaftaran);
-      setItems((current) => current.map((item) => item.id_pendaftaran === target.id_pendaftaran
-        ? { ...item, status: "Dibatalkan" }
-        : item));
-
-      try {
-        const history = await getRiwayatPendaftaran();
-        setItems(history.data);
-      } catch {
-        // The cancellation already succeeded; keep the safe local status until the next reload.
-      }
+      queryClient.setQueryData<RiwayatPendaftaran[]>(
+        queryKeys.pendaftaran(user?.id),
+        (current) => (current ?? []).map((item) => item.id_pendaftaran === target.id_pendaftaran
+          ? { ...item, status: "Dibatalkan" }
+          : item),
+      );
+      void queryClient.invalidateQueries({ queryKey: queryKeys.pendaftaran(user?.id) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.lomba(user?.id) });
       window.dispatchEvent(new Event("pad-registration-changed"));
 
       setCancelTarget(null);
@@ -215,7 +203,7 @@ export default function PendaftaranPage() {
           <section role="alert" className="rounded-2xl bg-white p-8 text-center shadow-sm">
             <h2 className="text-h6 font-bold text-neutral-900">Riwayat pendaftaran belum dapat dimuat</h2>
             <p className="mt-2 text-body-2 text-neutral-600">{loadError}</p>
-            <Button className="mt-5" onClick={() => setRetryKey((value) => value + 1)}>
+            <Button className="mt-5" onClick={() => void pendaftaranQuery.refetch()}>
               Coba Lagi
             </Button>
           </section>

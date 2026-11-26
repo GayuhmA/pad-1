@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import { QueryProvider } from '@/components/QueryProvider';
 import { SessionProvider } from '@/components/SessionProvider';
 
 export const metadata: Metadata = {
@@ -16,7 +17,9 @@ export default function RootLayout({
     <html lang="id">
       <body className="font-outfit bg-neutral-50" suppressHydrationWarning>
         <div className="min-h-screen flex flex-col">
-          <SessionProvider>{children}</SessionProvider>
+          <QueryProvider>
+            <SessionProvider>{children}</SessionProvider>
+          </QueryProvider>
         </div>
       </body>
     </html>

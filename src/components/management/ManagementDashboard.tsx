@@ -2,12 +2,15 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '@/stores/auth-store';
 import { DashboardOverviewSkeleton } from '@/components/management/DashboardLoadingSkeleton';
 import { createMatch, getManagementDashboard, getMatchOptions } from '@/lib/api/management-dashboard';
 import { ApiRequestError } from '@/lib/api/client';
+import { STALE_TIME } from '@/lib/query-client';
+import { queryKeys } from '@/lib/query-keys';
 import { Modal } from '@/components/Modal';
 import type { CreateMatchInput, DashboardAgenda, DashboardMatch, ManagementDashboardData, MatchOptionsData } from '@/types/dashboard';
 
@@ -423,6 +426,8 @@ function ManagementContent({ data, tanggal, loading, error, onRetry, onDateChang
   </>;
 }
 
+export const ManagementShellContext = createContext(false);
+
 interface ManagementLayoutProps {
   role: Role;
   userName: string;
@@ -432,7 +437,9 @@ interface ManagementLayoutProps {
 }
 
 export function ManagementLayout({ role, userName, title, activeItem, children }: ManagementLayoutProps) {
+  const insideShell = useContext(ManagementShellContext);
   const [mobileOpen, setMobileOpen] = useState(false);
+  if (insideShell) return <>{children}</>;
   const config = navigation[role];
   const today = new Intl.DateTimeFormat('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' }).format(new Date());
   return (
@@ -453,47 +460,43 @@ export function ManagementLayout({ role, userName, title, activeItem, children }
 }
 
 export function ManagementDashboard({ role, userName }: { role: Role; userName: string }) {
+  const queryClient = useQueryClient();
+  const userId = useAuthStore((state) => state.user?.id);
   const isAdmin = role === 'admin';
-  const [dashboard, setDashboard] = useState<ManagementDashboardData | null>(null);
   const [tanggal, setTanggal] = useState(jakartaToday);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
   const [showMatchModal, setShowMatchModal] = useState(false);
 
-  useEffect(() => {
-    const controller = new AbortController();
-    getManagementDashboard(tanggal, role, controller.signal).then((response) => {
-      setDashboard(response.data);
-      setTanggal(response.data.tanggal_filter);
-    }).catch((error: unknown) => {
-      if (!controller.signal.aborted) setLoadError(error instanceof Error ? error.message : 'Dashboard gagal dimuat.');
-    }).finally(() => {
-      if (!controller.signal.aborted) setLoading(false);
-    });
-    return () => controller.abort();
-  }, [tanggal, role, refreshKey]);
+  const dashboardQuery = useQuery({
+    queryKey: [...queryKeys.managementDashboard(userId), role, tanggal] as const,
+    queryFn: ({ signal }) => getManagementDashboard(tanggal, role, signal).then((res) => res.data),
+    staleTime: STALE_TIME.DYNAMIC,
+    placeholderData: (previousData) => previousData,
+  });
+
+  const dashboard = dashboardQuery.data ?? null;
+  const displayedTanggal = dashboard?.tanggal_filter ?? tanggal;
+  const loading = dashboardQuery.isLoading;
+  const loadError = dashboardQuery.error
+    ? (dashboardQuery.error instanceof Error ? dashboardQuery.error.message : 'Dashboard gagal dimuat.')
+    : null;
 
   const handleDateChange = useCallback((value: string) => {
-    setLoading(true);
-    setLoadError(null);
     setTanggal(value);
   }, []);
   const refresh = useCallback(() => {
-    setLoading(true);
-    setLoadError(null);
-    setRefreshKey((current) => current + 1);
-  }, []);
+    void dashboardQuery.refetch();
+  }, [dashboardQuery]);
   const handleMatchCreated = useCallback(() => {
     setShowMatchModal(false);
-    refresh();
-  }, [refresh]);
+    void queryClient.invalidateQueries({ queryKey: ['management', 'dashboard'] });
+    void queryClient.invalidateQueries({ queryKey: ['beranda'] });
+  }, [queryClient]);
 
   return <ManagementLayout role={role} userName={userName} title="Dashboard" activeItem="dashboard">
     <div className="mb-7 flex flex-wrap items-end justify-between gap-4 sm:mb-8">
       <div><p className="mb-2 text-sm font-medium text-primary-600">{isAdmin ? 'Pusat kendali acara' : 'Selamat datang kembali'}</p><h1 className="text-[26px] font-semibold tracking-tight text-neutral-900 sm:text-[32px]">{isAdmin ? 'Dashboard Admin' : 'Selamat Datang, Panitia'}</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-500">Semua yang perlu Anda pantau untuk menjaga acara berjalan lancar.</p></div>
     </div>
-    <ManagementContent data={dashboard} tanggal={tanggal} loading={loading} error={loadError} onRetry={refresh} onDateChange={handleDateChange} onAddMatch={() => setShowMatchModal(true)} />
+    <ManagementContent data={dashboard} tanggal={displayedTanggal} loading={loading} error={loadError} onRetry={refresh} onDateChange={handleDateChange} onAddMatch={() => setShowMatchModal(true)} />
     {showMatchModal && <MatchFormModal onClose={() => setShowMatchModal(false)} onCreated={handleMatchCreated} />}
   </ManagementLayout>;
 }

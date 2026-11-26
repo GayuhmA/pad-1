@@ -1,7 +1,40 @@
-type PageSkeletonVariant = 'home' | 'lomba' | 'pendaftaran' | 'iuran' | 'profile' | 'management' | 'generic';
+import {
+  DashboardCompetitionsSkeleton,
+  DashboardDocumentationSkeleton,
+  DashboardDuesSkeleton,
+  DashboardHistorySkeleton,
+  DashboardMessageSkeleton,
+  DashboardOverviewSkeleton,
+  DashboardPanitiaSkeleton,
+  DashboardRegistrationsSkeleton,
+  DashboardWargaSkeleton,
+} from '@/components/management/DashboardLoadingSkeleton';
+
+export type PageSkeletonVariant =
+  | 'home'
+  | 'lomba'
+  | 'pendaftaran'
+  | 'iuran'
+  | 'histori'
+  | 'notifikasi'
+  | 'profile'
+  | 'management'
+  | 'generic';
+
+export type ManagementSkeletonPage =
+  | 'dashboard'
+  | 'competitions'
+  | 'registrations'
+  | 'dues'
+  | 'warga'
+  | 'panitia'
+  | 'messages'
+  | 'documentation'
+  | 'history';
 
 interface PageSkeletonProps {
   variant?: PageSkeletonVariant;
+  managementPage?: ManagementSkeletonPage;
   includeShell?: boolean;
 }
 
@@ -255,35 +288,157 @@ function PendaftaranSkeleton() {
 function IuranSkeleton() {
   return (
     <div className="min-h-screen grow bg-linear-to-b from-primary-100 via-primary-100 to-primary-100/10">
-      <div className="mx-auto flex w-full max-w-360 flex-col gap-10 px-5 py-10 md:px-15">
-        <header className="space-y-3">
-          <SkeletonBlock className="h-12 w-64 max-w-full rounded-xl" />
-          <SkeletonBlock className="h-5 w-112 max-w-full rounded-md" />
-        </header>
-        <section className="space-y-5">
-          <div className="flex flex-col justify-between gap-4 sm:flex-row">
-            <div className="space-y-2">
-              <SkeletonBlock className="h-10 w-60 rounded-lg" />
-              <SkeletonBlock className="h-4 w-72 rounded-md" />
+      <div className="mx-auto flex w-full max-w-360 flex-col gap-12 px-5 py-10 md:px-15">
+        <section className="flex flex-col gap-6">
+          <SkeletonBlock className="h-9 w-72 max-w-full rounded-xl bg-white/80 md:h-11 md:w-88" />
+          <div className="flex flex-col items-stretch justify-between gap-4 sm:flex-row sm:items-center">
+            <div className="flex w-fit items-center gap-1 rounded-2xl bg-white p-1.5 shadow-xs">
+              {[1, 2, 3].map((item) => <SkeletonBlock key={item} className="h-9 w-24 rounded-xl" />)}
             </div>
-            <div className="flex gap-2 rounded-xl bg-white/70 p-1.5">
-              {[1, 2, 3].map((item) => <SkeletonBlock key={item} className="h-9 w-28 rounded-lg" />)}
+            <SkeletonBlock className="h-11 w-full rounded-xl bg-white/90 sm:w-80" />
+          </div>
+          <div className="overflow-hidden rounded-2xl bg-white/60 shadow-xs">
+            <div className="grid grid-cols-4 gap-4 bg-neutral-50 px-8 py-4.5">
+              {[1, 2, 3, 4].map((col) => <SkeletonBlock key={col} className="h-5 w-28 rounded-md" />)}
+            </div>
+            <div className="divide-y divide-white/60">
+              {[1, 2, 3, 4, 5].map((row) => (
+                <div key={row} className="grid grid-cols-4 gap-4 px-8 py-6">
+                  <SkeletonBlock className="h-5 w-40 rounded-md" />
+                  <SkeletonBlock className="h-5 w-28 rounded-md" />
+                  <SkeletonBlock className="h-5 w-24 rounded-md" />
+                  <SkeletonBlock className="h-5 w-32 rounded-md" />
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center justify-between bg-neutral-50 px-8 py-4.5">
+              <SkeletonBlock className="h-4 w-44 rounded-md" />
+              <div className="flex gap-2">
+                {[1, 2, 3].map((item) => <SkeletonBlock key={item} className="size-7 rounded-md" />)}
+              </div>
             </div>
           </div>
-          <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-            {[1, 2, 3].map((item) => (
-              <div key={item} className="space-y-5 rounded-2xl bg-white p-6">
-                <SkeletonBlock className="h-6 w-32 rounded-full" />
-                <SkeletonBlock className="h-8 w-3/4 rounded-lg" />
-                <SkeletonBlock className="h-20 w-full rounded-xl" />
-                <SkeletonBlock className="h-11 w-full rounded-lg" />
+        </section>
+
+        <section className="flex flex-col gap-6">
+          <SkeletonBlock className="h-9 w-64 max-w-full rounded-xl bg-white/80 md:h-11" />
+          <div className="grid items-stretch gap-8 lg:grid-cols-12">
+            <div className="flex flex-col gap-6 rounded-2xl bg-white p-6 shadow-xs md:p-8 lg:col-span-7">
+              <SkeletonBlock className="h-12 w-full rounded-xl" />
+              <SkeletonBlock className="mx-auto aspect-square w-60 rounded-2xl" />
+              <SkeletonBlock className="h-12 w-full rounded-xl" />
+            </div>
+            <div className="flex flex-col gap-5 rounded-2xl bg-white p-6 shadow-xs md:p-8 lg:col-span-5">
+              <SkeletonBlock className="h-7 w-52 rounded-lg" />
+              {[1, 2, 3].map((field) => (
+                <div key={field} className="space-y-2">
+                  <SkeletonBlock className="h-4 w-36 rounded-md" />
+                  <SkeletonBlock className="h-12 w-full rounded-xl" />
+                </div>
+              ))}
+              <SkeletonBlock className="h-32 w-full rounded-xl" />
+              <SkeletonBlock className="mt-auto h-12 w-full rounded-xl" />
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function HistoriSkeleton() {
+  return (
+    <div className="min-h-screen grow bg-linear-to-b from-primary-100 via-primary-100 to-primary-100/10">
+      <div className="mx-auto flex w-full max-w-360 flex-col gap-10 px-5 py-10 md:gap-12 md:px-15">
+        <div className="flex w-fit items-center gap-2 rounded-2xl bg-white p-1.5 shadow-xs">
+          <SkeletonBlock className="h-10 w-24 rounded-xl" />
+          <SkeletonBlock className="size-10 rounded-xl" />
+        </div>
+
+        <section className="flex flex-col gap-4 rounded-3xl bg-white p-6 shadow-xs md:p-8 lg:p-10">
+          <SkeletonBlock className="h-4 w-44 rounded-md" />
+          <SkeletonBlock className="h-10 w-3/4 max-w-2xl rounded-xl" />
+          <SkeletonBlock className="h-4 w-56 rounded-md" />
+          <div className="space-y-2.5 pt-2">
+            <SkeletonBlock className="h-4 w-full rounded-md" />
+            <SkeletonBlock className="h-4 w-5/6 rounded-md" />
+          </div>
+        </section>
+
+        <section className="flex flex-col gap-5">
+          <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+            <SkeletonBlock className="h-9 w-56 rounded-xl bg-white/80" />
+            <SkeletonBlock className="h-11 w-full rounded-xl bg-white/90 sm:w-80" />
+          </div>
+          <div className="overflow-hidden rounded-2xl bg-white/60 shadow-xs">
+            <div className="grid grid-cols-4 gap-4 bg-neutral-50 px-6 py-4">
+              {[1, 2, 3, 4].map((col) => <SkeletonBlock key={col} className="h-5 w-24 rounded-md" />)}
+            </div>
+            <div className="divide-y divide-white/60">
+              {[1, 2, 3, 4].map((row) => (
+                <div key={row} className="grid grid-cols-4 gap-4 px-6 py-5">
+                  <SkeletonBlock className="h-5 w-36 rounded-md" />
+                  <SkeletonBlock className="h-5 w-24 rounded-md" />
+                  <SkeletonBlock className="h-5 w-32 rounded-md" />
+                  <SkeletonBlock className="h-5 w-44 rounded-md" />
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="flex flex-col gap-5">
+          <SkeletonBlock className="h-9 w-52 rounded-xl bg-white/80" />
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {[1, 2, 3].map((card) => (
+              <div key={card} className="overflow-hidden rounded-2xl bg-white shadow-xs">
+                <SkeletonBlock className="aspect-4/3 w-full rounded-none" />
+                <div className="space-y-2.5 p-5">
+                  <SkeletonBlock className="h-4 w-28 rounded-md" />
+                  <SkeletonBlock className="h-6 w-3/4 rounded-lg" />
+                </div>
               </div>
             ))}
           </div>
         </section>
-        <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(340px,0.72fr)]">
-          <SkeletonBlock className="h-150 rounded-2xl bg-white/80" />
-          <SkeletonBlock className="h-96 rounded-2xl bg-white/80" />
+      </div>
+    </div>
+  );
+}
+
+function NotifikasiSkeleton() {
+  return (
+    <div className="min-h-screen grow bg-linear-to-b from-primary-100 to-white">
+      <div className="mx-auto flex w-full max-w-360 flex-col gap-14 px-5 py-12 md:gap-24 md:px-15 md:py-24">
+        <section className="flex flex-col justify-between gap-8 rounded-xl bg-white/90 px-6 py-8 shadow-xl lg:min-h-54 lg:flex-row lg:items-center">
+          <div className="flex-1 space-y-4">
+            <SkeletonBlock className="h-5 w-48 rounded-md" />
+            <SkeletonBlock className="h-9 w-80 max-w-full rounded-xl" />
+            <SkeletonBlock className="h-5 w-64 max-w-full rounded-md" />
+          </div>
+          <div className="flex items-center gap-3 self-start rounded-xl bg-neutral-100 p-4 lg:self-center">
+            {[1, 2, 3].map((box) => <SkeletonBlock key={box} className="h-16 w-14 rounded-xl sm:h-25 sm:w-25" />)}
+          </div>
+        </section>
+
+        <section className="mx-auto w-full max-w-240">
+          <SkeletonBlock className="mx-auto mb-10 h-13 max-w-188 rounded-xl bg-white/90 shadow-lg sm:mb-12" />
+          <div className="mb-5 flex flex-wrap gap-2 sm:px-5">
+            <SkeletonBlock className="h-11 w-36 rounded-xl bg-white" />
+            <SkeletonBlock className="h-11 w-36 rounded-xl bg-white" />
+          </div>
+          <div className="space-y-5">
+            {[1, 2, 3].map((item) => (
+              <div key={item} className="space-y-3 rounded-2xl border border-neutral-100 bg-white p-6">
+                <div className="flex justify-between gap-4">
+                  <SkeletonBlock className="h-5 w-48 rounded-md" />
+                  <SkeletonBlock className="h-4 w-24 rounded-md" />
+                </div>
+                <SkeletonBlock className="h-4 w-3/4 rounded-md" />
+                <SkeletonBlock className="h-3.5 w-1/2 rounded-md" />
+              </div>
+            ))}
+          </div>
         </section>
       </div>
     </div>
@@ -307,7 +462,19 @@ function GenericSkeleton() {
   );
 }
 
-function ManagementSkeleton() {
+function ManagementMainSkeleton({ page = 'dashboard' }: { page?: ManagementSkeletonPage }) {
+  if (page === 'competitions') return <DashboardCompetitionsSkeleton />;
+  if (page === 'registrations') return <DashboardRegistrationsSkeleton />;
+  if (page === 'dues') return <DashboardDuesSkeleton />;
+  if (page === 'warga') return <DashboardWargaSkeleton />;
+  if (page === 'panitia') return <DashboardPanitiaSkeleton />;
+  if (page === 'messages') return <DashboardMessageSkeleton />;
+  if (page === 'documentation') return <DashboardDocumentationSkeleton />;
+  if (page === 'history') return <DashboardHistorySkeleton />;
+  return <DashboardOverviewSkeleton />;
+}
+
+function ManagementSkeleton({ page = 'dashboard' }: { page?: ManagementSkeletonPage }) {
   return (
     <div className="min-h-screen bg-[#FCF4F3] text-neutral-900">
       <div className="min-h-screen lg:pl-69">
@@ -332,33 +499,32 @@ function ManagementSkeleton() {
           <div className="flex items-center gap-4"><SkeletonBlock className="hidden h-4 w-36 rounded md:block" /><SkeletonBlock className="h-10 w-28 rounded-xl" /></div>
         </header>
 
-        <main aria-hidden="true" className="mx-auto w-full max-w-[1600px] space-y-7 px-4 py-7 sm:px-7 sm:py-9 lg:px-9 lg:py-10">
-          <section className="space-y-3"><SkeletonBlock className="h-4 w-40 rounded" /><SkeletonBlock className="h-9 w-80 max-w-full rounded-lg" /><SkeletonBlock className="h-4 w-96 max-w-full rounded" /></section>
-          <section className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-4">
-            {[1, 2, 3, 4].map((item) => <div key={item} className="space-y-5 rounded-2xl border border-primary-100/90 bg-white p-6"><SkeletonBlock className="h-4 w-28 rounded" /><SkeletonBlock className="h-8 w-20 rounded" /></div>)}
+        <main aria-hidden="true" className="mx-auto w-full max-w-[1600px] px-4 py-7 sm:px-7 sm:py-9 lg:px-9 lg:py-10">
+          <section className="mb-7 space-y-2.5 sm:mb-8">
+            <SkeletonBlock className="h-4 w-36 rounded" />
+            <SkeletonBlock className="h-8 w-64 max-w-full rounded-lg sm:h-9" />
           </section>
-          <section className="grid items-start gap-5 2xl:grid-cols-2">
-            {[1, 2].map((item) => <div key={item} className="space-y-5 rounded-2xl border border-primary-100/90 bg-white p-6"><SkeletonBlock className="h-6 w-48 rounded" /><SkeletonBlock className="h-48 w-full rounded-xl" /></div>)}
-          </section>
-          <SkeletonBlock className="h-48 rounded-2xl bg-white" />
+          <ManagementMainSkeleton page={page} />
         </main>
       </div>
     </div>
   );
 }
 
-function PageContent({ variant }: { variant: PageSkeletonVariant }) {
+function PageContent({ variant, managementPage }: { variant: PageSkeletonVariant; managementPage?: ManagementSkeletonPage }) {
   if (variant === 'home') return <HomeSkeleton />;
   if (variant === 'lomba') return <LombaSkeleton />;
   if (variant === 'pendaftaran') return <PendaftaranSkeleton />;
   if (variant === 'iuran') return <IuranSkeleton />;
+  if (variant === 'histori') return <HistoriSkeleton />;
+  if (variant === 'notifikasi') return <NotifikasiSkeleton />;
   if (variant === 'profile') return <ProfileSkeleton />;
-  if (variant === 'management') return <ManagementSkeleton />;
+  if (variant === 'management') return <ManagementSkeleton page={managementPage} />;
   return <GenericSkeleton />;
 }
 
-export function PageSkeleton({ variant = 'generic', includeShell = false }: PageSkeletonProps) {
-  const content = <PageContent variant={variant} />;
+export function PageSkeleton({ variant = 'generic', managementPage, includeShell = false }: PageSkeletonProps) {
+  const content = <PageContent variant={variant} managementPage={managementPage} />;
   if (variant === 'management') {
     return (
       <div role="status" aria-live="polite" className="min-h-screen">

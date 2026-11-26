@@ -6,6 +6,7 @@ import { Button } from '@/components/Button';
 import { AgendaBanner } from '@/components/notifications/AgendaBanner';
 import { NotificationCard } from '@/components/notifications/NotificationCard';
 import { NotificationDetails } from '@/components/notifications/NotificationDetails';
+import { PageSkeleton } from '@/components/skeletons/PageSkeleton';
 import { NEXT_AGENDA } from '@/lib/data/notifications';
 import { filterNotifications, type NotificationFilter } from '@/lib/notifications';
 import { useNotificationStore } from '@/stores/notification-store';
@@ -39,6 +40,10 @@ export function NotificationCenter() {
 
   const visibleNotifications = filterNotifications(notifications, query, filter);
   const selectedNotification = notifications.find((item) => item.id === selectedId);
+
+  if (isLoading && notifications.length === 0) {
+    return <PageSkeleton variant="notifikasi" />;
+  }
 
   function openNotification(id: string) {
     openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;

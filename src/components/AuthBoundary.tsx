@@ -4,16 +4,32 @@ import { type ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
 import { useRequireAuth } from '@/hooks/use-require-auth';
 import { useAuthStore } from '@/stores/auth-store';
-import { PageSkeleton } from '@/components/skeletons/PageSkeleton';
+import { PageSkeleton, type ManagementSkeletonPage } from '@/components/skeletons/PageSkeleton';
 import { SessionStatus } from '@/components/SessionStatus';
+
+function getManagementSkeletonPage(pathname: string): ManagementSkeletonPage {
+  if (pathname.startsWith('/dashboard/lomba')) return 'competitions';
+  if (pathname.startsWith('/dashboard/pendaftaran')) return 'registrations';
+  if (pathname.startsWith('/dashboard/iuran')) return 'dues';
+  if (pathname.startsWith('/dashboard/warga')) return 'warga';
+  if (pathname.startsWith('/dashboard/panitia')) return 'panitia';
+  if (pathname.startsWith('/dashboard/pesan')) return 'messages';
+  if (pathname.startsWith('/dashboard/dokumentasi')) return 'documentation';
+  if (pathname.startsWith('/dashboard/histori')) return 'history';
+  return 'dashboard';
+}
 
 function getRouteSkeleton(pathname: string) {
   if (pathname === '/') return <PageSkeleton variant="home" />;
   if (pathname.startsWith('/lomba')) return <PageSkeleton variant="lomba" />;
   if (pathname.startsWith('/pendaftaran')) return <PageSkeleton variant="pendaftaran" />;
   if (pathname.startsWith('/iuran')) return <PageSkeleton variant="iuran" />;
+  if (pathname.startsWith('/histori')) return <PageSkeleton variant="histori" />;
+  if (pathname.startsWith('/notifikasi')) return <PageSkeleton variant="notifikasi" />;
   if (pathname.startsWith('/profile')) return <PageSkeleton variant="profile" />;
-  if (pathname.startsWith('/dashboard')) return <PageSkeleton variant="management" />;
+  if (pathname.startsWith('/dashboard')) {
+    return <PageSkeleton variant="management" managementPage={getManagementSkeletonPage(pathname)} />;
+  }
   return <PageSkeleton variant="generic" />;
 }
 

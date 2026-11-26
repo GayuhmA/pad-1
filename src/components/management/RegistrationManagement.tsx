@@ -1,14 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  DashboardCardGridSkeleton,
-  DashboardMetricSkeleton,
-  DashboardSkeletonFrame,
-  DashboardTableSkeleton,
-} from '@/components/management/DashboardLoadingSkeleton';
+import { useMemo, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { DashboardRegistrationsSkeleton } from '@/components/management/DashboardLoadingSkeleton';
 import { Icon, ManagementLayout } from '@/components/management/ManagementDashboard';
 import { getManagementPendaftaran, updateRegistrationStatus } from '@/lib/api/management-pendaftaran';
+import { STALE_TIME } from '@/lib/query-client';
+import { queryKeys } from '@/lib/query-keys';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -186,56 +184,34 @@ export function RegistrationManagement({
   role: 'admin' | 'panitia';
   userName: string;
 }) {
-  const [registrations, setRegistrations] = useState<Registration[]>([]);
-  const [quotas, setQuotas] = useState<LombaQuota[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [hasLoaded, setHasLoaded] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<FilterTab>('Semua');
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
   const [dialog, setDialog] = useState<DialogState>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const queryClient = useQueryClient();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const fetchRegistrations = useCallback(async (signal?: AbortSignal) => {
-    try {
-      const res = await getManagementPendaftaran({ role }, signal);
-      if (signal?.aborted) return;
-      setRegistrations(res.data.registrations ?? []);
-      setQuotas(res.data.quotas ?? []);
-      setHasLoaded(true);
-      setLoadError(null);
-    } catch (err: unknown) {
-      if (!signal?.aborted) {
-        setLoadError(err instanceof Error ? err.message : 'Pendaftaran gagal dimuat.');
-      }
-    } finally {
-      if (!signal?.aborted) setLoading(false);
-    }
-  }, [role]);
+  const pendaftaranQuery = useQuery({
+    queryKey: queryKeys.managementPendaftaran({}),
+    queryFn: ({ signal }) => getManagementPendaftaran({ role }, signal).then((res) => res.data),
+    staleTime: STALE_TIME.DYNAMIC,
+  });
 
-  useEffect(() => {
-    const controller = new AbortController();
-    void getManagementPendaftaran({ role }, controller.signal)
-      .then((res) => {
-        if (controller.signal.aborted) return;
-        setRegistrations(res.data.registrations ?? []);
-        setQuotas(res.data.quotas ?? []);
-        setHasLoaded(true);
-        setLoadError(null);
-      })
-      .catch((err: unknown) => {
-        if (!controller.signal.aborted) {
-          setLoadError(err instanceof Error ? err.message : 'Pendaftaran gagal dimuat.');
-        }
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
-  }, [role]);
+  const registrations = useMemo(
+    () => (pendaftaranQuery.data?.registrations ?? []) as Registration[],
+    [pendaftaranQuery.data],
+  );
+  const quotas = useMemo(
+    () => (pendaftaranQuery.data?.quotas ?? []) as LombaQuota[],
+    [pendaftaranQuery.data],
+  );
+  const hasLoaded = pendaftaranQuery.isSuccess;
+  const loading = pendaftaranQuery.isLoading;
+  const loadError = pendaftaranQuery.error
+    ? (pendaftaranQuery.error instanceof Error ? pendaftaranQuery.error.message : 'Pendaftaran gagal dimuat.')
+    : null;
 
   // ── Metrics
   const total = registrations.length;
@@ -254,15 +230,17 @@ export function RegistrationManagement({
   // ── Filter + search
   const filtered = useMemo(() => {
     const q = query.trim().toLocaleLowerCase('id-ID');
-    return registrations.filter((r) => {
-      const matchTab = activeTab === 'Semua' || r.status === activeTab;
-      const matchQuery =
-        !q ||
-        r.peserta.toLocaleLowerCase('id-ID').includes(q) ||
-        r.lomba.toLocaleLowerCase('id-ID').includes(q) ||
-        (r.nama_tim?.toLocaleLowerCase('id-ID').includes(q) ?? false);
-      return matchTab && matchQuery;
-    });
+    return registrations
+      .filter((r) => {
+        const matchTab = activeTab === 'Semua' || r.status === activeTab;
+        const matchQuery =
+          !q ||
+          r.peserta.toLocaleLowerCase('id-ID').includes(q) ||
+          r.lomba.toLocaleLowerCase('id-ID').includes(q) ||
+          (r.nama_tim?.toLocaleLowerCase('id-ID').includes(q) ?? false);
+        return matchTab && matchQuery;
+      })
+      .sort((a, b) => Number(b.status === 'Menunggu') - Number(a.status === 'Menunggu'));
   }, [registrations, activeTab, query]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
@@ -278,9 +256,22 @@ export function RegistrationManagement({
     setActionError(null);
     try {
       await updateRegistrationStatus(id, { status }, role);
-      setRegistrations((prev) =>
-        prev.map((r) => (r.id === id ? { ...r, status } : r)),
+      queryClient.setQueryData(
+        queryKeys.managementPendaftaran({}),
+        (current: { registrations?: Registration[]; quotas?: LombaQuota[] } | undefined) =>
+          current
+            ? {
+                ...current,
+                registrations: (current.registrations ?? []).map((r) =>
+                  r.id === id ? { ...r, status } : r,
+                ),
+              }
+            : current,
       );
+      void queryClient.invalidateQueries({ queryKey: ['management', 'pendaftaran'] });
+      void queryClient.invalidateQueries({ queryKey: ['management', 'dashboard'] });
+      void queryClient.invalidateQueries({ queryKey: ['pendaftaran'] });
+      void queryClient.invalidateQueries({ queryKey: ['lomba'] });
       setDialog(null);
     } catch (err: unknown) {
       setActionError(err instanceof Error ? err.message : 'Gagal memperbarui status pendaftaran.');
@@ -320,9 +311,7 @@ export function RegistrationManagement({
           <button
             type="button"
             onClick={() => {
-              setLoading(true);
-              setLoadError(null);
-              void fetchRegistrations();
+              void pendaftaranQuery.refetch();
             }}
             className="shrink-0 rounded-lg bg-primary-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary-700"
           >
@@ -348,11 +337,7 @@ export function RegistrationManagement({
       </section>
 
       {loading && !hasLoaded ? (
-        <DashboardSkeletonFrame label="Memuat data pendaftaran…">
-          <DashboardMetricSkeleton count={4} merged />
-          <DashboardTableSkeleton columns={6} rows={5} tabCount={5} />
-          <DashboardCardGridSkeleton titleWidth="w-56" cards={3} />
-        </DashboardSkeletonFrame>
+        <DashboardRegistrationsSkeleton />
       ) : hasLoaded ? (
         <>
           {/* ── Metric cards */}

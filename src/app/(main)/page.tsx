@@ -3,14 +3,17 @@
 import { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
 import { Modal } from "@/components/Modal";
 import { PageSkeleton } from "@/components/skeletons/PageSkeleton";
 import { getBeranda } from "@/lib/api/beranda";
 import { ApiRequestError } from "@/lib/api/client";
+import { STALE_TIME } from "@/lib/query-client";
+import { queryKeys } from "@/lib/query-keys";
 import { useAuthStore } from "@/stores/auth-store";
-import type { BerandaAgenda, BerandaData } from "@/types/beranda";
+import type { BerandaAgenda } from "@/types/beranda";
 
 const dateFormatter = new Intl.DateTimeFormat("id-ID", {
   day: "numeric",
@@ -74,13 +77,29 @@ export default function HomePage() {
   const router = useRouter();
   const user = useAuthStore((state) => state.user);
   const authStatus = useAuthStore((state) => state.status);
-  const [data, setData] = useState<BerandaData | null>(null);
   const [selectedAgenda, setSelectedAgenda] = useState<BerandaAgenda | null>(null);
   const [isAnnouncementOpen, setAnnouncementOpen] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [isLoading, setLoading] = useState(true);
-  const [requestVersion, setRequestVersion] = useState(0);
   const [requestedDate, setRequestedDate] = useState<string | null>(null);
+
+  const berandaQuery = useQuery({
+    queryKey: queryKeys.beranda(requestedDate),
+    queryFn: ({ signal }) => getBeranda(requestedDate ?? undefined, signal).then((res) => res.data),
+    staleTime: STALE_TIME.MODERATE,
+    placeholderData: (previousData) => previousData,
+  });
+
+  useEffect(() => {
+    const reason = berandaQuery.error;
+    if (reason instanceof ApiRequestError && reason.status === 401 && useAuthStore.getState().user) {
+      void useAuthStore.getState().fetchUser(true);
+    }
+  }, [berandaQuery.error]);
+
+  const data = berandaQuery.data ?? null;
+  const isLoading = berandaQuery.isLoading;
+  const error = berandaQuery.error
+    ? (berandaQuery.error instanceof Error ? berandaQuery.error.message : "Beranda gagal dimuat. Silakan coba lagi.")
+    : null;
 
   const requireLoginForAction = useCallback((): boolean => {
     if (authStatus === "initializing") return false;
@@ -92,41 +111,14 @@ export default function HomePage() {
   }, [authStatus, user, router]);
 
   const retry = useCallback(() => {
-    setLoading(true);
-    setError(null);
-    setRequestVersion((version) => version + 1);
-  }, []);
+    void berandaQuery.refetch();
+  }, [berandaQuery]);
 
   const selectDate = useCallback((date: string) => {
     if (!requireLoginForAction()) return;
     if (date === requestedDate) return;
-    setLoading(true);
-    setError(null);
     setRequestedDate(date);
   }, [requestedDate, requireLoginForAction]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    let active = true;
-    void getBeranda(requestedDate ?? undefined, controller.signal)
-      .then((response) => {
-        if (active) setData(response.data);
-      })
-      .catch((reason: unknown) => {
-        if (!active) return;
-        if (reason instanceof ApiRequestError && reason.status === 401 && useAuthStore.getState().user) {
-          void useAuthStore.getState().fetchUser(true);
-        }
-        setError(reason instanceof Error ? reason.message : "Beranda gagal dimuat. Silakan coba lagi.");
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-    return () => {
-      active = false;
-      controller.abort();
-    };
-  }, [requestVersion, requestedDate]);
 
   if (isLoading && !data) {
     return <PageSkeleton variant="home" />;

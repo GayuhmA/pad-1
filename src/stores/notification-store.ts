@@ -7,8 +7,9 @@ interface NotificationState {
   notifications: NotificationItem[];
   unreadCount: number;
   isLoading: boolean;
+  lastLoadedAt: number | null;
   error: string | null;
-  loadNotifications: () => Promise<void>;
+  loadNotifications: (force?: boolean) => Promise<void>;
   fetchUnreadCount: () => Promise<void>;
   markAsRead: (id: string) => Promise<void>;
   reset: () => void;
@@ -17,19 +18,25 @@ interface NotificationState {
 const errorMessage = (error: unknown) => error instanceof ApiRequestError
   ? error.message : 'Notifikasi sedang bermasalah. Silakan coba lagi.';
 
+const NOTIFICATION_STALE_TIME = 30_000;
 let unreadCountRequest = 0;
 
 export const useNotificationStore = create<NotificationState>((set, get) => ({
   notifications: [],
   unreadCount: 0,
   isLoading: false,
+  lastLoadedAt: null,
   error: null,
 
-  loadNotifications: async () => {
-    set({ isLoading: true, error: null });
+  loadNotifications: async (force = false) => {
+    const { notifications, lastLoadedAt } = get();
+    if (!force && notifications.length > 0 && lastLoadedAt && Date.now() - lastLoadedAt < NOTIFICATION_STALE_TIME) {
+      return;
+    }
+    set({ isLoading: notifications.length === 0, error: null });
     try {
       const response = await getNotifications();
-      set({ notifications: response.data, isLoading: false, error: null });
+      set({ notifications: response.data, isLoading: false, lastLoadedAt: Date.now(), error: null });
       void get().fetchUnreadCount();
     } catch (error) {
       set({ isLoading: false, error: errorMessage(error) });
@@ -68,6 +75,6 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
 
   reset: () => {
     unreadCountRequest++;
-    set({ notifications: [], unreadCount: 0, isLoading: false, error: null });
+    set({ notifications: [], unreadCount: 0, isLoading: false, lastLoadedAt: null, error: null });
   },
 }));
