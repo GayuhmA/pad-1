@@ -2,12 +2,18 @@
 
 import { useRef, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
+import { useQuery } from '@tanstack/react-query';
 import { Avatar } from '@/components/Avatar';
 import { Badge } from '@/components/Badge';
 import { Button } from '@/components/Button';
 import { useResidentProfile } from '@/hooks/use-resident-profile';
+import { getKontakPengurus } from '@/lib/api/profile';
+import { getManagementRole } from '@/lib/management-role';
 import { formatBirthDetails } from '@/lib/profile';
+import { STALE_TIME } from '@/lib/query-client';
+import { queryKeys } from '@/lib/query-keys';
 import { useAuthStore } from '@/stores/auth-store';
+import { ContactCard } from '@/components/profile/ContactCard';
 import { ProfileDialog } from '@/components/profile/ProfileDialog';
 import { EditProfileForm } from '@/components/profile/EditProfileForm';
 import { ManagePasswordForm } from '@/components/profile/ManagePasswordForm';
@@ -25,11 +31,22 @@ function ProfileField({ label, children }: { label: string; children: ReactNode 
 export function ProfileContent() {
   const router = useRouter();
   const { profile } = useResidentProfile();
+  const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [showManagePassword, setShowManagePassword] = useState(false);
+  const [contactNotice, setContactNotice] = useState<string | null>(null);
   const submitLocked = useRef(false);
+
+  const isResident = Boolean(user) && getManagementRole(user?.role) === null;
+  const kontakQuery = useQuery({
+    queryKey: queryKeys.kontakPengurus(user?.id),
+    queryFn: ({ signal }) => getKontakPengurus(signal).then((res) => res.data),
+    enabled: isResident,
+    staleTime: STALE_TIME.MODERATE,
+  });
+  const contacts = kontakQuery.data ?? [];
 
   async function handleLogout() {
     if (submitLocked.current) return;
@@ -77,7 +94,35 @@ export function ProfileContent() {
           <div className="flex flex-col gap-5">
             <section aria-labelledby="neighborhood-contacts-title" className="rounded-xl bg-white p-6">
               <h2 id="neighborhood-contacts-title" className="mb-5 text-center text-h7 font-bold text-primary-600">Kontak Ketua RT dan RW</h2>
-              <p className="text-center text-body-2 text-neutral-500">Kontak pengurus belum tersedia.</p>
+              {isResident && kontakQuery.isLoading ? (
+                <div className="space-y-3" role="status" aria-live="polite">
+                  <span className="sr-only">Memuat kontak pengurus…</span>
+                  {[1, 2].map((item) => (
+                    <div key={item} className="h-28 animate-pulse rounded-md bg-primary-100/50" />
+                  ))}
+                </div>
+              ) : contacts.length > 0 ? (
+                <ul className="space-y-3">
+                  {contacts.map((contact) => (
+                    <ContactCard
+                      key={contact.id}
+                      contact={contact}
+                      onUnavailable={() => setContactNotice(`Nomor WhatsApp ${contact.position} belum tersedia.`)}
+                    />
+                  ))}
+                </ul>
+              ) : kontakQuery.isError ? (
+                <p role="alert" className="text-center text-body-2 text-error-100">
+                  {kontakQuery.error instanceof Error ? kontakQuery.error.message : 'Kontak pengurus belum dapat dimuat.'}
+                </p>
+              ) : (
+                <p className="text-center text-body-2 text-neutral-500">Kontak pengurus belum tersedia.</p>
+              )}
+              {contactNotice && (
+                <p role="status" className="mt-3 text-center text-body-3 font-medium text-neutral-600">
+                  {contactNotice}
+                </p>
+              )}
             </section>
             <Button size="L" onClick={() => setShowManagePassword(true)} aria-describedby="password-update-note" className="h-15! w-full text-h6! font-bold shadow-sm">Kelola Sandi</Button>
             <p id="password-update-note" className="text-center text-body-3 text-neutral-500">Ubah username atau sandi akun Anda.</p>

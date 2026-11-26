@@ -1,3 +1,4 @@
+import type { NeighborhoodContact } from '@/lib/data/profile';
 import { apiRequest } from './client';
 
 export interface UpdateProfilRequest {
@@ -22,6 +23,16 @@ export interface UpdatePasswordRequest {
 export interface UpdateProfilResponse {
   success: boolean;
   message: string;
+}
+
+export interface KontakPengurusResponse {
+  success: boolean;
+  message: string;
+  data: NeighborhoodContact[];
+}
+
+export function getKontakPengurus(signal?: AbortSignal): Promise<KontakPengurusResponse> {
+  return apiRequest('/api/warga/kontak-pengurus', { signal });
 }
 
 export function updateProfil(body: UpdateProfilRequest): Promise<UpdateProfilResponse> {
