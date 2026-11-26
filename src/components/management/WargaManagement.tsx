@@ -1,11 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
-import {
-  DashboardMetricSkeleton,
-  DashboardSkeletonFrame,
-  DashboardTableSkeleton,
-} from '@/components/management/DashboardLoadingSkeleton';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { DashboardWargaSkeleton } from '@/components/management/DashboardLoadingSkeleton';
 import { Icon, ManagementLayout } from '@/components/management/ManagementDashboard';
 import { Modal } from '@/components/Modal';
 import { ApiRequestError } from '@/lib/api/client';
@@ -16,8 +13,11 @@ import {
   deleteAdminRt,
   getAdminWarga,
   updateAdminRt,
+  updateAdminRw,
   updateAdminWarga,
 } from '@/lib/api/management-admin';
+import { STALE_TIME } from '@/lib/query-client';
+import { queryKeys } from '@/lib/query-keys';
 import type {
   AccountStatus,
   CreatedAccountInfo,
@@ -345,10 +345,21 @@ function RtRwModal({
   onClose: () => void;
   onMutated: () => Promise<void>;
 }) {
+  const [activeTab, setActiveTab] = useState<'rt' | 'rw'>('rt');
   const [rwIdForRt, setRwIdForRt] = useState<string>(rwList[0] ? String(rwList[0].id_rw) : '');
   const [nomorRt, setNomorRt] = useState('');
   const [namaRt, setNamaRt] = useState('');
+  const [namaKetuaRt, setNamaKetuaRt] = useState('');
+  const [nomorWaRt, setNomorWaRt] = useState('');
   const [editingRt, setEditingRt] = useState<RtItem | null>(null);
+
+  const [selectedRwId, setSelectedRwId] = useState<string>(rwList[0] ? String(rwList[0].id_rw) : '');
+  const activeRw = useMemo(
+    () => rwList.find((rw) => String(rw.id_rw) === selectedRwId) ?? rwList[0] ?? null,
+    [rwList, selectedRwId],
+  );
+  const [namaKetuaRw, setNamaKetuaRw] = useState<string>(rwList[0]?.nama_ketua ?? '');
+  const [nomorWaRw, setNomorWaRw] = useState<string>(rwList[0]?.nomor_whatsapp ?? '');
 
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
@@ -364,6 +375,15 @@ function RtRwModal({
     setEditingRt(null);
     setNomorRt('');
     setNamaRt('');
+    setNamaKetuaRt('');
+    setNomorWaRt('');
+  }
+
+  function selectRwForEdit(rw: RwItem) {
+    setSelectedRwId(String(rw.id_rw));
+    setNamaKetuaRw(rw.nama_ketua ?? '');
+    setNomorWaRw(rw.nomor_whatsapp ?? '');
+    setFeedback(null);
   }
 
   async function handleSaveRt(event: FormEvent<HTMLFormElement>) {
@@ -372,19 +392,18 @@ function RtRwModal({
     setBusy(true);
     setFeedback(null);
     try {
+      const payload = {
+        id_rw: Number(effectiveRwIdForRt),
+        nomor_rt: nomorRt.trim(),
+        nama_rt: namaRt.trim() || `RT ${nomorRt.trim()}`,
+        nama_ketua: namaKetuaRt.trim() || null,
+        nomor_whatsapp: nomorWaRt.trim() || null,
+      };
       if (editingRt) {
-        await updateAdminRt(editingRt.id_rt, {
-          id_rw: Number(effectiveRwIdForRt),
-          nomor_rt: nomorRt.trim(),
-          nama_rt: namaRt.trim() || `RT ${nomorRt.trim()}`,
-        });
+        await updateAdminRt(editingRt.id_rt, payload);
         setFeedback({ type: 'success', text: 'Data RT berhasil diperbarui.' });
       } else {
-        await createAdminRt({
-          id_rw: Number(effectiveRwIdForRt),
-          nomor_rt: nomorRt.trim(),
-          nama_rt: namaRt.trim() || `RT ${nomorRt.trim()}`,
-        });
+        await createAdminRt(payload);
         setFeedback({ type: 'success', text: 'RT baru berhasil ditambahkan.' });
       }
       resetRtForm();
@@ -416,14 +435,36 @@ function RtRwModal({
     }
   }
 
+  async function handleSaveRw(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!activeRw) return;
+    setBusy(true);
+    setFeedback(null);
+    try {
+      await updateAdminRw(activeRw.id_rw, {
+        nama_ketua: namaKetuaRw.trim() || null,
+        nomor_whatsapp: nomorWaRw.trim() || null,
+      });
+      setFeedback({ type: 'success', text: `Kontak pengurus ${activeRw.nama_rw} berhasil disimpan.` });
+      await onMutated();
+    } catch (error) {
+      const message = error instanceof ApiRequestError || error instanceof Error
+        ? error.message
+        : 'Gagal menyimpan kontak pengurus RW.';
+      setFeedback({ type: 'error', text: message });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
-    <Modal isOpen onClose={busy ? () => undefined : onClose} ariaLabel="Kelola data RT">
+    <Modal isOpen onClose={busy ? () => undefined : onClose} ariaLabel="Kelola data RT dan RW">
       <div className="p-5 sm:p-7">
         <div className="mb-5 flex items-start justify-between gap-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary-600">Master Wilayah</p>
-            <h2 className="mt-1 text-xl font-semibold text-neutral-900">Kelola Data RT</h2>
-            <p className="mt-1 text-sm text-neutral-500">Kelola daftar RT berdasarkan wilayah RW.</p>
+            <h2 className="mt-1 text-xl font-semibold text-neutral-900">Kelola Data RT &amp; Pengurus RW</h2>
+            <p className="mt-1 text-sm text-neutral-500">Kelola daftar RT serta nama ketua dan nomor WhatsApp pengurus RT/RW.</p>
           </div>
           <button
             type="button"
@@ -433,6 +474,41 @@ function RtRwModal({
             className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-50 disabled:opacity-50"
           >
             <Icon name="close" />
+          </button>
+        </div>
+
+        <div role="tablist" aria-label="Pilih tab wilayah" className="mb-5 flex w-fit gap-1 rounded-xl bg-neutral-100 p-1">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'rt'}
+            onClick={() => {
+              setActiveTab('rt');
+              setFeedback(null);
+            }}
+            className={`rounded-lg px-4 py-1.5 text-xs font-semibold transition ${
+              activeTab === 'rt' ? 'bg-white text-primary-700 shadow-xs' : 'text-neutral-600 hover:text-neutral-900'
+            }`}
+          >
+            Data RT ({rtList.length})
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'rw'}
+            onClick={() => {
+              setActiveTab('rw');
+              setFeedback(null);
+              if (activeRw) {
+                setNamaKetuaRw(activeRw.nama_ketua ?? '');
+                setNomorWaRw(activeRw.nomor_whatsapp ?? '');
+              }
+            }}
+            className={`rounded-lg px-4 py-1.5 text-xs font-semibold transition ${
+              activeTab === 'rw' ? 'bg-white text-primary-700 shadow-xs' : 'text-neutral-600 hover:text-neutral-900'
+            }`}
+          >
+            Pengurus RW ({rwList.length})
           </button>
         </div>
 
@@ -449,128 +525,247 @@ function RtRwModal({
           </div>
         )}
 
-        <div className="space-y-5">
-          <form onSubmit={(event) => void handleSaveRt(event)} className="grid gap-3 rounded-xl border border-neutral-100 bg-neutral-50/70 p-4 sm:grid-cols-3">
-            <label className="space-y-1">
-              <span className="text-xs font-semibold text-neutral-600">RW Induk</span>
-              <select
-                required
-                value={effectiveRwIdForRt}
-                onChange={(event) => setRwIdForRt(event.target.value)}
-                className={inputClass}
-              >
-                <option value="">Pilih RW</option>
-                {rwList.map((rw) => (
-                  <option key={rw.id_rw} value={rw.id_rw}>{rw.nama_rw}</option>
-                ))}
-              </select>
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs font-semibold text-neutral-600">Nomor RT</span>
-              <input
-                required
-                maxLength={10}
-                value={nomorRt}
-                onChange={(event) => setNomorRt(event.target.value)}
-                placeholder="Contoh: 001"
-                className={inputClass}
-              />
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs font-semibold text-neutral-600">Nama Label RT</span>
-              <input
-                maxLength={50}
-                value={namaRt}
-                onChange={(event) => setNamaRt(event.target.value)}
-                placeholder="Contoh: RT 001"
-                className={inputClass}
-              />
-            </label>
-            <div className="flex items-center justify-end gap-2 sm:col-span-3">
-              {editingRt && (
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={resetRtForm}
-                  className="h-9 rounded-xl border border-neutral-200 bg-white px-3 text-xs font-semibold text-neutral-600 hover:bg-neutral-50"
+        {activeTab === 'rt' ? (
+          <div className="space-y-5">
+            <form onSubmit={(event) => void handleSaveRt(event)} className="grid gap-3 rounded-xl border border-neutral-100 bg-neutral-50/70 p-4 sm:grid-cols-3">
+              <label className="space-y-1">
+                <span className="text-xs font-semibold text-neutral-600">RW Induk</span>
+                <select
+                  required
+                  value={effectiveRwIdForRt}
+                  onChange={(event) => setRwIdForRt(event.target.value)}
+                  className={inputClass}
                 >
-                  Batal Edit
+                  <option value="">Pilih RW</option>
+                  {rwList.map((rw) => (
+                    <option key={rw.id_rw} value={rw.id_rw}>{rw.nama_rw}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs font-semibold text-neutral-600">Nomor RT</span>
+                <input
+                  required
+                  maxLength={10}
+                  value={nomorRt}
+                  onChange={(event) => setNomorRt(event.target.value)}
+                  placeholder="Contoh: 001"
+                  className={inputClass}
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs font-semibold text-neutral-600">Nama Label RT</span>
+                <input
+                  maxLength={100}
+                  value={namaRt}
+                  onChange={(event) => setNamaRt(event.target.value)}
+                  placeholder="Contoh: RT 001"
+                  className={inputClass}
+                />
+              </label>
+              <label className="space-y-1 sm:col-span-2">
+                <span className="text-xs font-semibold text-neutral-600">Nama Ketua RT</span>
+                <input
+                  maxLength={150}
+                  value={namaKetuaRt}
+                  onChange={(event) => setNamaKetuaRt(event.target.value)}
+                  placeholder="Contoh: Budi Santoso"
+                  className={inputClass}
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs font-semibold text-neutral-600">Nomor WhatsApp</span>
+                <input
+                  type="tel"
+                  maxLength={20}
+                  value={nomorWaRt}
+                  onChange={(event) => setNomorWaRt(event.target.value)}
+                  placeholder="081234567890"
+                  className={inputClass}
+                />
+              </label>
+              <div className="flex items-center justify-end gap-2 sm:col-span-3">
+                {editingRt && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={resetRtForm}
+                    className="h-9 rounded-xl border border-neutral-200 bg-white px-3 text-xs font-semibold text-neutral-600 hover:bg-neutral-50"
+                  >
+                    Batal Edit
+                  </button>
+                )}
+                <button
+                  type="submit"
+                  disabled={busy || rwList.length === 0}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-primary-600 px-4 text-xs font-semibold text-white hover:bg-primary-700 disabled:opacity-50"
+                >
+                  <Icon name="check" className="size-3.5" />
+                  {editingRt ? 'Simpan Perubahan RT' : 'Tambah RT'}
                 </button>
-              )}
-              <button
-                type="submit"
-                disabled={busy || rwList.length === 0}
-                className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-primary-600 px-4 text-xs font-semibold text-white hover:bg-primary-700 disabled:opacity-50"
-              >
-                <Icon name="check" className="size-3.5" />
-                {editingRt ? 'Simpan Perubahan RT' : 'Tambah RT'}
-              </button>
-            </div>
-          </form>
+              </div>
+            </form>
 
-          <div className="divide-y divide-neutral-100 rounded-xl border border-neutral-100">
-            {rtList.length === 0 ? (
-              <p className="py-8 text-center text-sm text-neutral-400">Belum ada data RT terdaftar.</p>
+            <div className="divide-y divide-neutral-100 rounded-xl border border-neutral-100">
+              {rtList.length === 0 ? (
+                <p className="py-8 text-center text-sm text-neutral-400">Belum ada data RT terdaftar.</p>
+              ) : (
+                rtList.map((rt) => (
+                  <div key={rt.id_rt} className="flex items-center justify-between gap-3 px-4 py-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-neutral-900">{rt.nama_rt}</p>
+                      <p className="text-xs text-neutral-500">
+                        {rt.nama_rw ?? (rt.nomor_rw ? `RW ${rt.nomor_rw}` : `RW #${rt.id_rw}`)}
+                        {rt.jumlah_warga !== null ? ` · ${rt.jumlah_warga} warga` : ''}
+                      </p>
+                      {(rt.nama_ketua || rt.nomor_whatsapp) && (
+                        <p className="mt-0.5 text-xs text-neutral-600">
+                          Ketua: {rt.nama_ketua ?? '-'}
+                          {rt.nomor_whatsapp ? ` · WA ${rt.nomor_whatsapp}` : ''}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => {
+                          setEditingRt(rt);
+                          setRwIdForRt(String(rt.id_rw));
+                          setNomorRt(rt.nomor_rt);
+                          setNamaRt(rt.nama_rt);
+                          setNamaKetuaRt(rt.nama_ketua ?? '');
+                          setNomorWaRt(rt.nomor_whatsapp ?? '');
+                          setFeedback(null);
+                        }}
+                        className="flex size-8 items-center justify-center rounded-lg border border-neutral-200 text-neutral-600 hover:border-primary-200 hover:text-primary-600"
+                        aria-label={`Edit ${rt.nama_rt}`}
+                      >
+                        <Icon name="edit" className="size-4" />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void handleDeleteRt(rt)}
+                        className="flex size-8 items-center justify-center rounded-lg border border-primary-200 text-primary-600 hover:bg-primary-50"
+                        aria-label={`Hapus ${rt.nama_rt}`}
+                      >
+                        <Icon name="close" className="size-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-5">
+            {rwList.length === 0 ? (
+              <p className="rounded-xl border border-neutral-100 py-8 text-center text-sm text-neutral-400">
+                Data RW belum tersedia dari backend.
+              </p>
             ) : (
-              rtList.map((rt) => (
-                <div key={rt.id_rt} className="flex items-center justify-between gap-3 px-4 py-3">
-                  <div>
-                    <p className="text-sm font-semibold text-neutral-900">{rt.nama_rt}</p>
-                    <p className="text-xs text-neutral-500">
-                      {rt.nama_rw ?? (rt.nomor_rw ? `RW ${rt.nomor_rw}` : `RW #${rt.id_rw}`)}
-                      {rt.jumlah_warga !== null ? ` · ${rt.jumlah_warga} warga` : ''}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
+              <>
+                <form onSubmit={(event) => void handleSaveRw(event)} className="grid gap-3 rounded-xl border border-neutral-100 bg-neutral-50/70 p-4 sm:grid-cols-2">
+                  {rwList.length > 1 ? (
+                    <label className="space-y-1 sm:col-span-2">
+                      <span className="text-xs font-semibold text-neutral-600">Wilayah RW</span>
+                      <select
+                        value={activeRw ? String(activeRw.id_rw) : ''}
+                        onChange={(event) => {
+                          const target = rwList.find((rw) => String(rw.id_rw) === event.target.value);
+                          if (target) selectRwForEdit(target);
+                        }}
+                        className={inputClass}
+                      >
+                        {rwList.map((rw) => (
+                          <option key={rw.id_rw} value={rw.id_rw}>{rw.nama_rw}</option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : (
+                    <div className="sm:col-span-2">
+                      <span className="text-xs font-semibold text-neutral-600">Wilayah RW</span>
+                      <p className="mt-1 text-sm font-semibold text-neutral-900">{activeRw?.nama_rw}</p>
+                    </div>
+                  )}
+                  <label className="space-y-1">
+                    <span className="text-xs font-semibold text-neutral-600">Nama Ketua RW</span>
+                    <input
+                      maxLength={150}
+                      value={namaKetuaRw}
+                      onChange={(event) => setNamaKetuaRw(event.target.value)}
+                      placeholder="Contoh: Siti Aminah"
+                      className={inputClass}
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-xs font-semibold text-neutral-600">Nomor WhatsApp</span>
+                    <input
+                      type="tel"
+                      maxLength={20}
+                      value={nomorWaRw}
+                      onChange={(event) => setNomorWaRw(event.target.value)}
+                      placeholder="081234567890"
+                      className={inputClass}
+                    />
+                  </label>
+                  <div className="flex items-center justify-end sm:col-span-2">
                     <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => {
-                        setEditingRt(rt);
-                        setRwIdForRt(String(rt.id_rw));
-                        setNomorRt(rt.nomor_rt);
-                        setNamaRt(rt.nama_rt);
-                        setFeedback(null);
-                      }}
-                      className="flex size-8 items-center justify-center rounded-lg border border-neutral-200 text-neutral-600 hover:border-primary-200 hover:text-primary-600"
-                      aria-label={`Edit ${rt.nama_rt}`}
+                      type="submit"
+                      disabled={busy || !activeRw}
+                      className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-primary-600 px-4 text-xs font-semibold text-white hover:bg-primary-700 disabled:opacity-50"
                     >
-                      <Icon name="edit" className="size-4" />
-                    </button>
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => void handleDeleteRt(rt)}
-                      className="flex size-8 items-center justify-center rounded-lg border border-primary-200 text-primary-600 hover:bg-primary-50"
-                      aria-label={`Hapus ${rt.nama_rt}`}
-                    >
-                      <Icon name="close" className="size-4" />
+                      <Icon name="check" className="size-3.5" />
+                      Simpan Pengurus RW
                     </button>
                   </div>
+                </form>
+
+                <div className="divide-y divide-neutral-100 rounded-xl border border-neutral-100">
+                  {rwList.map((rw) => (
+                    <div key={rw.id_rw} className="flex items-center justify-between gap-3 px-4 py-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-neutral-900">{rw.nama_rw}</p>
+                        <p className="text-xs text-neutral-500">
+                          {rw.jumlah_rt !== null ? `${rw.jumlah_rt} RT` : `Nomor RW ${rw.nomor_rw}`}
+                        </p>
+                        <p className="mt-0.5 text-xs text-neutral-600">
+                          Ketua: {rw.nama_ketua ?? 'Belum diisi'}
+                          {rw.nomor_whatsapp ? ` · WA ${rw.nomor_whatsapp}` : ' · WA belum diisi'}
+                        </p>
+                      </div>
+                      {rwList.length > 1 && (
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => selectRwForEdit(rw)}
+                          className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-neutral-200 text-neutral-600 hover:border-primary-200 hover:text-primary-600"
+                          aria-label={`Edit pengurus ${rw.nama_rw}`}
+                        >
+                          <Icon name="edit" className="size-4" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
                 </div>
-              ))
+              </>
             )}
           </div>
-        </div>
+        )}
       </div>
     </Modal>
   );
 }
 
 export function WargaManagement({ role, userName }: { role: 'admin' | 'panitia'; userName: string }) {
-  const [wargaList, setWargaList] = useState<WargaItem[]>([]);
-  const [rtList, setRtList] = useState<RtItem[]>([]);
-  const [rwList, setRwList] = useState<RwItem[]>([]);
-  const [metrics, setMetrics] = useState<WargaMetrics>(EMPTY_METRICS);
+  const queryClient = useQueryClient();
 
   const [statusTab, setStatusTab] = useState<StatusTab>('Semua');
   const [rtFilter, setRtFilter] = useState<string>('Semua');
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
 
-  const [loading, setLoading] = useState(true);
-  const [hasLoaded, setHasLoaded] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
   const [formDialog, setFormDialog] = useState<{ mode: 'create' } | { mode: 'edit'; warga: WargaItem } | null>(null);
@@ -584,44 +779,32 @@ export function WargaManagement({ role, userName }: { role: 'admin' | 'panitia';
   const [createdAccount, setCreatedAccount] = useState<{ wargaName: string; account: CreatedAccountInfo } | null>(null);
   const [wilayahOpen, setWilayahOpen] = useState(false);
 
-  const reload = useCallback(async (showSpinner = true) => {
-    if (showSpinner) setLoading(true);
-    try {
-      const response = await getAdminWarga();
-      setWargaList(response.data.warga);
-      setRtList(response.data.rtList);
-      setRwList(response.data.rwList);
-      setMetrics(response.data.metrics);
-      setHasLoaded(true);
-      setLoadError(null);
-    } catch (error) {
-      setLoadError(error instanceof Error ? error.message : 'Data warga gagal dimuat.');
-    } finally {
-      if (showSpinner) setLoading(false);
-    }
-  }, []);
+  const wargaQuery = useQuery({
+    queryKey: queryKeys.managementWarga({}),
+    queryFn: ({ signal }) => getAdminWarga(undefined, signal).then((res) => res.data),
+    staleTime: STALE_TIME.MODERATE,
+  });
 
-  useEffect(() => {
-    const controller = new AbortController();
-    getAdminWarga(undefined, controller.signal)
-      .then((response) => {
-        setWargaList(response.data.warga);
-        setRtList(response.data.rtList);
-        setRwList(response.data.rwList);
-        setMetrics(response.data.metrics);
-        setHasLoaded(true);
-        setLoadError(null);
-      })
-      .catch((error: unknown) => {
-        if (!controller.signal.aborted) {
-          setLoadError(error instanceof Error ? error.message : 'Data warga gagal dimuat.');
-        }
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
-  }, []);
+  const wargaList = useMemo(() => wargaQuery.data?.warga ?? [], [wargaQuery.data]);
+  const rtList = useMemo(() => wargaQuery.data?.rtList ?? [], [wargaQuery.data]);
+  const rwList = useMemo(() => wargaQuery.data?.rwList ?? [], [wargaQuery.data]);
+  const metrics = wargaQuery.data?.metrics ?? EMPTY_METRICS;
+  const loading = wargaQuery.isLoading;
+  const hasLoaded = wargaQuery.isSuccess;
+  const loadError = wargaQuery.error
+    ? (wargaQuery.error instanceof Error ? wargaQuery.error.message : 'Data warga gagal dimuat.')
+    : null;
+
+  const reload = async (showSpinner = true) => {
+    if (showSpinner) {
+      await wargaQuery.refetch();
+      return;
+    }
+    await queryClient.invalidateQueries({ queryKey: ['management', 'warga'] });
+    void queryClient.invalidateQueries({ queryKey: ['management', 'akun'] });
+    void queryClient.invalidateQueries({ queryKey: ['management', 'dashboard'] });
+    void queryClient.invalidateQueries({ queryKey: ['kontak-pengurus'] });
+  };
 
   useEffect(() => {
     if (!toast) return;
@@ -733,7 +916,7 @@ export function WargaManagement({ role, userName }: { role: 'admin' | 'panitia';
             className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-700 transition hover:border-primary-200 hover:text-primary-700"
           >
             <Icon name="building" className="size-4.5 text-neutral-400" />
-            Kelola RT
+            Kelola RT &amp; RW
           </button>
           <button
             type="button"
@@ -780,10 +963,7 @@ export function WargaManagement({ role, userName }: { role: 'admin' | 'panitia';
       )}
 
       {loading && !hasLoaded ? (
-        <DashboardSkeletonFrame label="Memuat data warga…">
-          <DashboardMetricSkeleton count={4} />
-          <DashboardTableSkeleton columns={6} rows={6} tabCount={3} hasSelectFilter />
-        </DashboardSkeletonFrame>
+        <DashboardWargaSkeleton />
       ) : hasLoaded ? (
         <>
           <section aria-label="Ringkasan data warga" className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-4">

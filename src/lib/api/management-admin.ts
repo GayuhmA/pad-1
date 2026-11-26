@@ -11,6 +11,7 @@ import type {
   UpdateAkunRoleInput,
   UpdateAkunStatusInput,
   UpdateRtInput,
+  UpdateRwInput,
   UpdateWargaInput,
   UpdateWargaResponse,
 } from '@/types/management-admin';
@@ -68,6 +69,13 @@ export function updateAdminRt(idRt: number, input: UpdateRtInput): Promise<Gener
 export function deleteAdminRt(idRt: number): Promise<GenericAdminMutationResponse> {
   return apiRequest<GenericAdminMutationResponse>(`/api/dashboard/rt/${encodeURIComponent(idRt)}`, {
     method: 'DELETE',
+  });
+}
+
+export function updateAdminRw(idRw: number, input: UpdateRwInput): Promise<GenericAdminMutationResponse> {
+  return apiRequest<GenericAdminMutationResponse>(`/api/dashboard/rw/${encodeURIComponent(idRw)}`, {
+    method: 'PUT',
+    body: input,
   });
 }
 

@@ -9,9 +9,10 @@ const { NextRequest } = require('next/server');
 const { GET: getWarga, POST: createWarga } = require('../src/app/api/dashboard/warga/route.ts');
 const { PUT: updateWarga, DELETE: deactivateWarga } = require('../src/app/api/dashboard/warga/[id]/route.ts');
 const { GET: getRt, POST: createRt } = require('../src/app/api/dashboard/rt/route.ts');
-const { DELETE: deleteRt } = require('../src/app/api/dashboard/rt/[id]/route.ts');
+const { PUT: updateRt, DELETE: deleteRt } = require('../src/app/api/dashboard/rt/[id]/route.ts');
 const { POST: createRw } = require('../src/app/api/dashboard/rw/route.ts');
-const { DELETE: deleteRw } = require('../src/app/api/dashboard/rw/[id]/route.ts');
+const { PUT: updateRw, DELETE: deleteRw } = require('../src/app/api/dashboard/rw/[id]/route.ts');
+const { GET: getKontakPengurus } = require('../src/app/api/warga/kontak-pengurus/route.ts');
 const { GET: getAkun } = require('../src/app/api/dashboard/akun/route.ts');
 const { PATCH: updateRole } = require('../src/app/api/dashboard/akun/[id]/role/route.ts');
 const { PATCH: updateStatus } = require('../src/app/api/dashboard/akun/[id]/status/route.ts');
@@ -201,27 +202,109 @@ test('PUT and DELETE /api/dashboard/warga/[id] validate IDs and forward mutation
   assert.equal(delRes.status, 200);
 });
 
-test('RT & RW endpoints handle RT listing/creation and reject RW mutations with 405', async () => {
+test('RT & RW endpoints handle RT CRUD with contacts, RW ketua update only, and 405 for RW add/delete', async () => {
   global.fetch = async (url) => {
     if (String(url).endsWith('/api/admin/rw')) {
-      return Response.json({ success: true, data: [{ id_rw: 1, nomor_rw: '001', nama_rw: 'RW 001' }] });
+      return Response.json({
+        success: true,
+        data: [{ id_rw: 1, nomor_rw: '001', nama_rw: 'RW 001', nama_ketua: 'Siti Aminah', nomor_whatsapp: '081234567890' }],
+      });
     }
-    return Response.json({ success: true, data: [{ id_rt: 1, id_rw: 1, nomor_rt: '001', nama_rt: 'RT 001' }] });
+    return Response.json({
+      success: true,
+      data: [{ id_rt: 1, id_rw: 1, nomor_rt: '001', nama_rt: 'RT 001', nama_ketua: 'Budi Santoso', nomor_whatsapp: '081298765432' }],
+    });
   };
   const rtRes = await getRt(getReq('/api/dashboard/rt'));
   assert.equal(rtRes.status, 200);
   const rtJson = await rtRes.json();
   assert.equal(rtJson.data.rtList[0].nomor_rw, '001');
+  assert.equal(rtJson.data.rtList[0].nama_ketua, 'Budi Santoso');
+  assert.equal(rtJson.data.rwList[0].nama_ketua, 'Siti Aminah');
 
   assert.equal((await createRw(mutateReq('/api/dashboard/rw', 'POST', { nomor_rw: '002' }))).status, 405);
 
-  global.fetch = async () => Response.json({ success: true, message: 'RT berhasil ditambahkan.' }, { status: 201 });
-  assert.equal((await createRt(mutateReq('/api/dashboard/rt', 'POST', { id_rw: 1, nomor_rt: '002' }))).status, 201);
+  let sentRtBody;
+  global.fetch = async (url, init) => {
+    sentRtBody = JSON.parse(init.body);
+    return Response.json({ success: true, message: 'RT berhasil ditambahkan.' }, { status: 201 });
+  };
+  assert.equal(
+    (await createRt(mutateReq('/api/dashboard/rt', 'POST', {
+      id_rw: 1,
+      nomor_rt: '002',
+      nama_ketua: 'Pak RT 2',
+      nomor_whatsapp: '081234567890',
+    }))).status,
+    201,
+  );
+  assert.equal(sentRtBody.nama_ketua, 'Pak RT 2');
+  assert.equal(sentRtBody.nomor_whatsapp, '081234567890');
+
+  global.fetch = async (url, init) => {
+    assert.equal(init.method, 'PUT');
+    assert.deepEqual(JSON.parse(init.body), { nama_ketua: 'Pak RT Baru', nomor_whatsapp: null });
+    return Response.json({ success: true, message: 'Data RT berhasil diubah.' });
+  };
+  assert.equal(
+    (await updateRt(mutateReq('/api/dashboard/rt/1', 'PUT', {
+      nama_ketua: 'Pak RT Baru',
+      nomor_whatsapp: '',
+    }), { params: Promise.resolve({ id: '1' }) })).status,
+    200,
+  );
+
+  // RW update only allows nama_ketua and nomor_whatsapp
+  assert.equal(
+    (await updateRw(mutateReq('/api/dashboard/rw/1', 'PUT', { nomor_rw: '999' }), { params: Promise.resolve({ id: '1' }) })).status,
+    422,
+  );
+  global.fetch = async (url, init) => {
+    assert.equal(String(url), 'https://backend.example/api/admin/rw/1');
+    assert.equal(init.method, 'PUT');
+    assert.deepEqual(JSON.parse(init.body), { nama_ketua: 'Bu RW', nomor_whatsapp: '081234567890' });
+    return Response.json({ success: true, message: 'Data RW berhasil diubah.' });
+  };
+  assert.equal(
+    (await updateRw(mutateReq('/api/dashboard/rw/1', 'PUT', {
+      nama_ketua: 'Bu RW',
+      nomor_whatsapp: '081234567890',
+      nomor_rw: '999',
+    }), { params: Promise.resolve({ id: '1' }) })).status,
+    200,
+  );
 
   global.fetch = async () => Response.json({ message: 'RT masih memiliki warga.' }, { status: 409 });
   assert.equal((await deleteRt(mutateReq('/api/dashboard/rt/1', 'DELETE'), { params: Promise.resolve({ id: '1' }) })).status, 409);
 
   assert.equal((await deleteRw(mutateReq('/api/dashboard/rw/1', 'DELETE'), { params: Promise.resolve({ id: '1' }) })).status, 405);
+});
+
+test('GET /api/warga/kontak-pengurus normalizes RT/RW contacts and handles 404 gracefully', async () => {
+  global.fetch = async (url) => {
+    assert.equal(String(url), 'https://backend.example/api/warga/kontak-pengurus');
+    return Response.json({
+      success: true,
+      message: 'Kontak Ketua RT dan RW berhasil ditampilkan.',
+      data: {
+        rt: { id_rt: 1, nomor_rt: '001', nama_ketua: 'Budi Santoso', nomor_whatsapp: '081234567890' },
+        rw: { id_rw: 1, nomor_rw: '004', nama_ketua: 'Siti Aminah', nomor_whatsapp: null },
+      },
+    });
+  };
+  const okRes = await getKontakPengurus(getReq('/api/warga/kontak-pengurus', 'warga-token'));
+  assert.equal(okRes.status, 200);
+  const okJson = await okRes.json();
+  assert.deepEqual(okJson.data, [
+    { id: 'rt-1', name: 'Budi Santoso', position: 'Ketua RT 001', whatsapp: '081234567890' },
+    { id: 'rw-1', name: 'Siti Aminah', position: 'Ketua RW 004', whatsapp: null },
+  ]);
+
+  global.fetch = async () => Response.json({ message: 'Kontak pengurus belum tersedia.' }, { status: 404 });
+  const emptyRes = await getKontakPengurus(getReq('/api/warga/kontak-pengurus', 'warga-token'));
+  assert.equal(emptyRes.status, 200);
+  const emptyJson = await emptyRes.json();
+  assert.deepEqual(emptyJson.data, []);
 });
 
 test('Account management endpoints fetch accounts, update roles, and update status', async () => {

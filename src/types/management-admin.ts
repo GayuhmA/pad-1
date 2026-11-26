@@ -6,6 +6,8 @@ export interface RwItem {
   id_rw: number;
   nomor_rw: string;
   nama_rw: string;
+  nama_ketua: string | null;
+  nomor_whatsapp: string | null;
   jumlah_rt: number | null;
 }
 
@@ -14,6 +16,8 @@ export interface RtItem {
   id_rw: number;
   nomor_rt: string;
   nama_rt: string;
+  nama_ketua: string | null;
+  nomor_whatsapp: string | null;
   nomor_rw: string | null;
   nama_rw: string | null;
   jumlah_warga: number | null;
@@ -120,17 +124,24 @@ export interface UpdateWargaResponse {
 export interface CreateRtInput {
   id_rw: number;
   nomor_rt: string;
-  nama_rt?: string;
+  nama_rt?: string | null;
+  nama_ketua?: string | null;
+  nomor_whatsapp?: string | null;
 }
 
 export type UpdateRtInput = Partial<CreateRtInput>;
 
 export interface CreateRwInput {
   nomor_rw: string;
-  nama_rw?: string;
+  nama_rw?: string | null;
+  nama_ketua?: string | null;
+  nomor_whatsapp?: string | null;
 }
 
-export type UpdateRwInput = Partial<CreateRwInput>;
+export interface UpdateRwInput {
+  nama_ketua?: string | null;
+  nomor_whatsapp?: string | null;
+}
 
 export interface ManagementRtRwResponse {
   success: true;

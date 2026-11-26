@@ -158,6 +158,34 @@ export function validateUpdateWargaBody(body: Record<string, unknown>): UpdateWa
   return payload;
 }
 
+function parseNullableKetua(value: unknown): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (typeof value !== 'string') {
+    throw new ManagementAdminError(422, 'Nama ketua tidak valid.');
+  }
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (trimmed.length > 150) {
+    throw new ManagementAdminError(422, 'Nama ketua maksimal 150 karakter.');
+  }
+  return trimmed;
+}
+
+function parseNullableWhatsApp(value: unknown): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (typeof value !== 'string') {
+    throw new ManagementAdminError(422, 'Nomor WhatsApp tidak valid.');
+  }
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (trimmed.length > 20 || !/^[+\d][\d\s()-]{6,19}$/.test(trimmed)) {
+    throw new ManagementAdminError(422, 'Format nomor WhatsApp tidak valid (contoh: 081234567890).');
+  }
+  return trimmed;
+}
+
 export function validateCreateRtBody(body: Record<string, unknown>): CreateRtInput {
   const idRw = Number(body.id_rw);
   const nomorRt = optionalTrimmedString(body.nomor_rt);
@@ -168,7 +196,15 @@ export function validateCreateRtBody(body: Record<string, unknown>): CreateRtInp
     throw new ManagementAdminError(422, 'Nomor RT wajib diisi.');
   }
   const namaRt = optionalTrimmedString(body.nama_rt);
-  return { id_rw: idRw, nomor_rt: nomorRt, ...(namaRt ? { nama_rt: namaRt } : {}) };
+  const namaKetua = parseNullableKetua(body.nama_ketua);
+  const nomorWhatsapp = parseNullableWhatsApp(body.nomor_whatsapp);
+  return {
+    id_rw: idRw,
+    nomor_rt: nomorRt,
+    ...(namaRt ? { nama_rt: namaRt } : {}),
+    ...(namaKetua !== undefined ? { nama_ketua: namaKetua } : {}),
+    ...(nomorWhatsapp !== undefined ? { nomor_whatsapp: nomorWhatsapp } : {}),
+  };
 }
 
 export function validateUpdateRtBody(body: Record<string, unknown>): UpdateRtInput {
@@ -186,6 +222,11 @@ export function validateUpdateRtBody(body: Record<string, unknown>): UpdateRtInp
   if (typeof body.nama_rt === 'string' && body.nama_rt.trim()) {
     payload.nama_rt = body.nama_rt.trim();
   }
+  const namaKetua = parseNullableKetua(body.nama_ketua);
+  if (namaKetua !== undefined) payload.nama_ketua = namaKetua;
+  const nomorWhatsapp = parseNullableWhatsApp(body.nomor_whatsapp);
+  if (nomorWhatsapp !== undefined) payload.nomor_whatsapp = nomorWhatsapp;
+
   if (Object.keys(payload).length === 0) {
     throw new ManagementAdminError(422, 'Minimal satu data RT harus diisi.');
   }
@@ -196,21 +237,25 @@ export function validateCreateRwBody(body: Record<string, unknown>): CreateRwInp
   const nomorRw = optionalTrimmedString(body.nomor_rw);
   if (!nomorRw) throw new ManagementAdminError(422, 'Nomor RW wajib diisi.');
   const namaRw = optionalTrimmedString(body.nama_rw);
-  return { nomor_rw: nomorRw, ...(namaRw ? { nama_rw: namaRw } : {}) };
+  const namaKetua = parseNullableKetua(body.nama_ketua);
+  const nomorWhatsapp = parseNullableWhatsApp(body.nomor_whatsapp);
+  return {
+    nomor_rw: nomorRw,
+    ...(namaRw ? { nama_rw: namaRw } : {}),
+    ...(namaKetua !== undefined ? { nama_ketua: namaKetua } : {}),
+    ...(nomorWhatsapp !== undefined ? { nomor_whatsapp: nomorWhatsapp } : {}),
+  };
 }
 
 export function validateUpdateRwBody(body: Record<string, unknown>): UpdateRwInput {
   const payload: UpdateRwInput = {};
-  if (body.nomor_rw !== undefined) {
-    const nomorRw = optionalTrimmedString(body.nomor_rw);
-    if (!nomorRw) throw new ManagementAdminError(422, 'Nomor RW tidak boleh kosong.');
-    payload.nomor_rw = nomorRw;
-  }
-  if (typeof body.nama_rw === 'string' && body.nama_rw.trim()) {
-    payload.nama_rw = body.nama_rw.trim();
-  }
+  const namaKetua = parseNullableKetua(body.nama_ketua);
+  if (namaKetua !== undefined) payload.nama_ketua = namaKetua;
+  const nomorWhatsapp = parseNullableWhatsApp(body.nomor_whatsapp);
+  if (nomorWhatsapp !== undefined) payload.nomor_whatsapp = nomorWhatsapp;
+
   if (Object.keys(payload).length === 0) {
-    throw new ManagementAdminError(422, 'Minimal satu data RW harus diisi.');
+    throw new ManagementAdminError(422, 'Nama ketua atau nomor WhatsApp RW wajib diisi.');
   }
   return payload;
 }

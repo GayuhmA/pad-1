@@ -190,8 +190,17 @@ function normalizeRwItem(raw: Record<string, unknown>): RwItem | null {
   if (!id) return null;
   const nomorRw = optionalText(raw.nomor_rw) ?? String(id).padStart(3, '0');
   const namaRw = optionalText(raw.nama_rw) ?? `RW ${nomorRw}`;
+  const namaKetua = optionalText(raw.nama_ketua);
+  const nomorWhatsapp = optionalText(raw.nomor_whatsapp);
   const jumlahRt = optionalCount(raw.jumlah_rt ?? raw.rt_count);
-  return { id_rw: id, nomor_rw: nomorRw, nama_rw: namaRw, jumlah_rt: jumlahRt };
+  return {
+    id_rw: id,
+    nomor_rw: nomorRw,
+    nama_rw: namaRw,
+    nama_ketua: namaKetua,
+    nomor_whatsapp: nomorWhatsapp,
+    jumlah_rt: jumlahRt,
+  };
 }
 
 function normalizeRtItem(raw: Record<string, unknown>, rwMap: Map<number, RwItem>): RtItem | null {
@@ -202,6 +211,8 @@ function normalizeRtItem(raw: Record<string, unknown>, rwMap: Map<number, RwItem
   const linkedRw = rwMap.get(idRw);
   const nomorRt = optionalText(raw.nomor_rt) ?? String(id).padStart(3, '0');
   const namaRt = optionalText(raw.nama_rt) ?? `RT ${nomorRt}`;
+  const namaKetua = optionalText(raw.nama_ketua);
+  const nomorWhatsapp = optionalText(raw.nomor_whatsapp);
   const nomorRw = optionalText(rwObj?.nomor_rw ?? raw.nomor_rw) ?? linkedRw?.nomor_rw ?? null;
   const namaRw = optionalText(rwObj?.nama_rw ?? raw.nama_rw) ?? linkedRw?.nama_rw ?? null;
   const jumlahWarga = optionalCount(raw.jumlah_warga ?? raw.warga_count);
@@ -210,6 +221,8 @@ function normalizeRtItem(raw: Record<string, unknown>, rwMap: Map<number, RwItem
     id_rw: idRw,
     nomor_rt: nomorRt,
     nama_rt: namaRt,
+    nama_ketua: namaKetua,
+    nomor_whatsapp: nomorWhatsapp,
     nomor_rw: nomorRw,
     nama_rw: namaRw,
     jumlah_warga: jumlahWarga,
