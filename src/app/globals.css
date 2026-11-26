@@ -105,3 +105,38 @@
     }
   }
 }
+
+/* Keep modal scrollbars slim and inset so rounded corners stay crisp */
+[role="dialog"] .overflow-y-auto,
+[role="dialog"].overflow-y-auto,
+dialog.overflow-y-auto {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(141, 141, 165, 0.45) transparent;
+}
+
+[role="dialog"] .overflow-y-auto::-webkit-scrollbar,
+[role="dialog"].overflow-y-auto::-webkit-scrollbar,
+dialog.overflow-y-auto::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+[role="dialog"] .overflow-y-auto::-webkit-scrollbar-track,
+[role="dialog"].overflow-y-auto::-webkit-scrollbar-track,
+dialog.overflow-y-auto::-webkit-scrollbar-track {
+  background: transparent;
+  margin-block: 8px;
+}
+
+[role="dialog"] .overflow-y-auto::-webkit-scrollbar-thumb,
+[role="dialog"].overflow-y-auto::-webkit-scrollbar-thumb,
+dialog.overflow-y-auto::-webkit-scrollbar-thumb {
+  background-color: rgba(141, 141, 165, 0.45);
+  border-radius: 9999px;
+}
+
+[role="dialog"] .overflow-y-auto::-webkit-scrollbar-thumb:hover,
+[role="dialog"].overflow-y-auto::-webkit-scrollbar-thumb:hover,
+dialog.overflow-y-auto::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(112, 112, 143, 0.65);
+}
