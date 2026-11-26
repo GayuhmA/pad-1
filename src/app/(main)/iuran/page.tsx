@@ -2,20 +2,24 @@
 
 import React, { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import Image from "next/image";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Dropdown } from "@/components/Dropdown";
+import { Modal } from "@/components/Modal";
 import { PageSkeleton } from "@/components/skeletons/PageSkeleton";
 import { ApiRequestError } from "@/lib/api/client";
 import {
   ajukanPembayaranIuran,
   getDaftarIuran,
+  getDaftarIuranAktif,
   getPengaturanPembayaran,
   getTransparansiIuran,
 } from "@/lib/api/iuran";
+import { getManagementRole } from "@/lib/management-role";
+import { STALE_TIME } from "@/lib/query-client";
+import { queryKeys } from "@/lib/query-keys";
 import { useAuthStore } from "@/stores/auth-store";
 import type {
-  PengaturanPembayaranData,
-  TagihanIuran,
-  TransparansiIuranItem,
+  ActiveIuranOption,
   TransparansiPagination,
 } from "@/types/iuran";
 
@@ -37,8 +41,20 @@ interface DisplayIuranItem {
 const nominalFormatter = new Intl.NumberFormat("id-ID");
 const ALLOWED_FILE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const MAX_FILE_SIZE = 2 * 1024 * 1024;
+const TRANSPARENCY_PAGE_SIZE = 5;
 
 const FILTER_TABS = ["Semua", "Lunas", "Belum Lunas"] as const;
+
+function formatDueDate(value: string): string {
+  const parsed = new Date(`${value}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return new Intl.DateTimeFormat("id-ID", {
+    timeZone: "UTC",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(parsed);
+}
 
 function formatPaymentDate(value: string): string {
   return (
@@ -69,36 +85,23 @@ function parseNominalInput(value: string): number {
 }
 
 export default function IuranPage() {
+  const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);
+  const isResident = Boolean(user) && getManagementRole(user?.role) === null;
 
   // Transparency State
-  const [transparencyData, setTransparencyData] = useState<TransparansiIuranItem[]>([]);
-  const [paginationMeta, setPaginationMeta] = useState<TransparansiPagination>({
-    current_page: 1,
-    last_page: 1,
-    per_page: 10,
-    total: 0,
-    data: [],
-  });
   const [activeTab, setActiveTab] = useState<string>("Semua");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [debouncedSearch, setDebouncedSearch] = useState<string>("");
   const [currentPage, setCurrentPage] = useState<number>(1);
-  const [isTransparencyLoading, setIsTransparencyLoading] = useState(true);
-  const [transparencyError, setTransparencyError] = useState<string | null>(null);
 
-  // Payment Settings State (QRIS & Bank)
-  const [paymentSettings, setPaymentSettings] = useState<PengaturanPembayaranData | null>(null);
   const [paymentMethodTab, setPaymentMethodTab] = useState<"QRIS" | "Transfer">("QRIS");
-
-  // Citizen Bills State (background reference for active iuran endpoint)
-  const [bills, setBills] = useState<TagihanIuran[]>([]);
   const [pendingIds, setPendingIds] = useState<Set<number>>(() => new Set());
 
   // Form State
-  const [selectedIuranId, setSelectedIuranId] = useState<number | null>(null);
-  const [namaKepalaKeluarga, setNamaKepalaKeluarga] = useState<string>("");
-  const [nominalInput, setNominalInput] = useState<string>("");
+  const [selectedBillId, setSelectedBillId] = useState<number | null>(null);
+  const [namaOverride, setNamaOverride] = useState<string | null>(null);
+  const [nominalOverride, setNominalOverride] = useState<string | null>(null);
   const [metodePembayaran, setMetodePembayaran] = useState("QRIS");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -106,10 +109,12 @@ export default function IuranPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-
-  // Common UI State
-  const [retryKey, setRetryKey] = useState(0);
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [paymentSuccessModal, setPaymentSuccessModal] = useState<{
+    billName: string;
+    nominal: number;
+    metode: string;
+    message: string;
+  } | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -122,81 +127,114 @@ export default function IuranPage() {
     return () => clearTimeout(handler);
   }, [searchQuery]);
 
-  // Fetch Transparency Data
-  useEffect(() => {
-    const controller = new AbortController();
-    async function loadTransparency() {
-      setIsTransparencyLoading(true);
-      setTransparencyError(null);
-      try {
-        const response = await getTransparansiIuran(
-          {
-            status: activeTab,
-            search: debouncedSearch,
-            page: currentPage,
-          },
-          controller.signal,
-        );
-        setTransparencyData(response.data.data);
-        setPaginationMeta(response.data);
-        setLastUpdated(new Date());
-      } catch (error) {
-        if (!controller.signal.aborted) {
-          setTransparencyError(
-            error instanceof Error ? error.message : "Data transparansi iuran gagal dimuat.",
-          );
-        }
-      } finally {
-        if (!controller.signal.aborted) {
-          setIsTransparencyLoading(false);
-        }
-      }
-    }
-    void loadTransparency();
-    return () => controller.abort();
-  }, [activeTab, debouncedSearch, currentPage, retryKey]);
+  // Fetch Transparency Data (5 rows per page)
+  const transparansiQuery = useQuery({
+    queryKey: queryKeys.transparansiIuran({
+      status: activeTab,
+      search: debouncedSearch,
+      page: currentPage,
+    }),
+    queryFn: ({ signal }) =>
+      getTransparansiIuran(
+        {
+          status: activeTab,
+          search: debouncedSearch,
+          page: currentPage,
+          per_page: TRANSPARENCY_PAGE_SIZE,
+        },
+        signal,
+      ).then((response) => response.data),
+    staleTime: STALE_TIME.DYNAMIC,
+    placeholderData: (previousData) => previousData,
+  });
 
   // Fetch Payment Settings (Bank & QRIS)
-  useEffect(() => {
-    const controller = new AbortController();
-    async function loadSettings() {
-      try {
-        const response = await getPengaturanPembayaran(controller.signal);
-        if (response.data) {
-          setPaymentSettings(response.data);
-        }
-      } catch {
-        // Graceful fallback for guests or missing settings
-      }
-    }
-    void loadSettings();
-    return () => controller.abort();
-  }, [retryKey, user]);
+  const settingsQuery = useQuery({
+    queryKey: queryKeys.pengaturanPembayaran,
+    queryFn: ({ signal }) => getPengaturanPembayaran(signal).then((response) => response.data ?? null),
+    staleTime: STALE_TIME.STATIC,
+  });
 
-  // Fetch Citizen Bills (if authenticated)
-  useEffect(() => {
-    if (!user) return;
-    const controller = new AbortController();
-    async function loadBills() {
-      try {
-        const response = await getDaftarIuran(controller.signal);
-        setBills(response.data);
-        setSelectedIuranId((current) => {
-          if (current && response.data.some((item) => item.id_iuran === current)) return current;
-          const payable = response.data.find(
-            (item) =>
-              item.status === "Belum Bayar" &&
-              item.pembayaran_terakhir?.status_verifikasi !== "Menunggu",
-          );
-          return payable?.id_iuran ?? response.data[0]?.id_iuran ?? null;
-        });
-      } catch {
-        // Bills may fail if user is not a citizen account
-      }
+  // Fetch Citizen Bills (/api/warga/iuran)
+  const billsQuery = useQuery({
+    queryKey: queryKeys.wargaIuran(user?.id),
+    queryFn: ({ signal }) => getDaftarIuran(signal).then((response) => response.data),
+    enabled: isResident,
+    staleTime: STALE_TIME.DYNAMIC,
+  });
+
+  // Fetch Active Bills for Payment Dropdown (/api/warga/iuran/aktif)
+  const activeBillsQuery = useQuery({
+    queryKey: queryKeys.wargaIuranAktif(user?.id),
+    queryFn: ({ signal }) => getDaftarIuranAktif(signal).then((response) => response.data),
+    enabled: isResident,
+    staleTime: STALE_TIME.DYNAMIC,
+  });
+
+  const paginationMeta: TransparansiPagination = useMemo(() => transparansiQuery.data ?? {
+    current_page: 1,
+    last_page: 1,
+    per_page: TRANSPARENCY_PAGE_SIZE,
+    total: 0,
+    data: [],
+  }, [transparansiQuery.data]);
+  const transparencyData = useMemo(
+    () => transparansiQuery.data?.data ?? [],
+    [transparansiQuery.data],
+  );
+  const isTransparencyLoading = transparansiQuery.isLoading;
+  const transparencyError = transparansiQuery.error
+    ? (transparansiQuery.error instanceof Error
+      ? transparansiQuery.error.message
+      : "Data transparansi iuran gagal dimuat.")
+    : null;
+  const lastUpdated = useMemo(
+    () => (transparansiQuery.dataUpdatedAt ? new Date(transparansiQuery.dataUpdatedAt) : null),
+    [transparansiQuery.dataUpdatedAt],
+  );
+  const paymentSettings = settingsQuery.data ?? null;
+  const bills = useMemo(() => (isResident ? (billsQuery.data ?? []) : []), [isResident, billsQuery.data]);
+  const activeBillOptions = useMemo<ActiveIuranOption[]>(() => {
+    if (!isResident) return [];
+    const fromApi = activeBillsQuery.data ?? [];
+    if (fromApi.length > 0) return fromApi;
+    // Fallback to payable items from /api/warga/iuran if /aktif is empty due to timing
+    return bills
+      .filter((item) => item.status === "Belum Bayar" && item.is_aktif !== false && item.pembayaran_terakhir?.status_verifikasi !== "Menunggu")
+      .map((item) => ({
+        id_iuran: item.id_iuran,
+        nama_iuran: item.nama_iuran || item.periode?.nama_kegiatan || "Iuran Warga",
+        nominal: item.nominal,
+        jatuh_tempo: item.jatuh_tempo,
+        nama_kepala_keluarga: user?.nama ?? "",
+      }));
+  }, [isResident, activeBillsQuery.data, bills, user?.nama]);
+
+  const payableBills = useMemo(
+    () => activeBillOptions.filter((item) => !pendingIds.has(item.id_iuran)),
+    [activeBillOptions, pendingIds],
+  );
+
+  const selectedBill = useMemo(() => {
+    if (selectedBillId !== null) {
+      const explicit = payableBills.find((item) => item.id_iuran === selectedBillId);
+      if (explicit) return explicit;
     }
-    void loadBills();
-    return () => controller.abort();
-  }, [user, retryKey]);
+    return payableBills[0] ?? null;
+  }, [payableBills, selectedBillId]);
+
+  const tagihanDropdownOptions = useMemo(
+    () =>
+      payableBills.map((item) => ({
+        value: String(item.id_iuran),
+        label: `${item.nama_iuran} — Rp. ${nominalFormatter.format(item.nominal)}`,
+      })),
+    [payableBills],
+  );
+
+  const namaKepalaKeluarga = namaOverride ?? (selectedBill?.nama_kepala_keluarga || user?.nama || "");
+  const nominalInput = nominalOverride ?? (selectedBill ? formatNominalInput(String(Math.round(selectedBill.nominal))) : "");
+  const isSelectedPending = selectedBill ? pendingIds.has(selectedBill.id_iuran) : false;
 
   // Revoke preview URL on unmount or change
   useEffect(() => {
@@ -211,16 +249,6 @@ export default function IuranPage() {
     const timeout = window.setTimeout(() => setToastMessage(null), 5_000);
     return () => window.clearTimeout(timeout);
   }, [toastMessage]);
-
-  const activeBills = useMemo(() => (user ? bills : []), [user, bills]);
-  const selectedBill = useMemo(
-    () => activeBills.find((item) => item.id_iuran === selectedIuranId) ?? activeBills[0] ?? null,
-    [activeBills, selectedIuranId],
-  );
-  const isSelectedPending = selectedBill
-    ? pendingIds.has(selectedBill.id_iuran) ||
-      selectedBill.pembayaran_terakhir?.status_verifikasi === "Menunggu"
-    : false;
 
   // Map transparency data to display format
   const tableData = useMemo<DisplayIuranItem[]>(() => {
@@ -293,11 +321,21 @@ export default function IuranPage() {
         buktiBayar: selectedFile,
       });
       setPendingIds((current) => new Set(current).add(selectedBill.id_iuran));
-      setToastMessage(response.message);
-      setNamaKepalaKeluarga("");
-      setNominalInput("");
+      setPaymentSuccessModal({
+        billName: selectedBill.nama_iuran,
+        nominal: nominalValue,
+        metode: metodePembayaran,
+        message: response.message || "Bukti pembayaran Anda berhasil dikirim dan sedang menunggu konfirmasi panitia.",
+      });
+      setSelectedBillId(null);
+      setNamaOverride(null);
+      setNominalOverride(null);
       clearFile();
-      setRetryKey((k) => k + 1);
+      void queryClient.invalidateQueries({ queryKey: ['transparansi-iuran'] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.wargaIuran(user?.id) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.wargaIuranAktif(user?.id) });
+      void queryClient.invalidateQueries({ queryKey: ['management', 'iuran'] });
+      void queryClient.invalidateQueries({ queryKey: ['management', 'dashboard'] });
     } catch (error) {
       setFormError(
         error instanceof ApiRequestError
@@ -437,14 +475,14 @@ export default function IuranPage() {
           </h1>
 
           {transparencyError && (
-            <div
+            <div 
               role="alert"
               className="flex flex-col items-start justify-between gap-3 rounded-xl border border-error-100/20 bg-error-10 px-4 py-3 text-sm font-semibold text-error-100 sm:flex-row sm:items-center"
             >
               <span>{transparencyError}</span>
               <button
                 type="button"
-                onClick={() => setRetryKey((value) => value + 1)}
+                onClick={() => void transparansiQuery.refetch()}
                 className="rounded-lg bg-error-100 px-4 py-2 text-xs font-bold text-white cursor-pointer"
               >
                 Coba Lagi
@@ -586,10 +624,10 @@ export default function IuranPage() {
             Metode Pembayaran
           </h2>
 
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
 
             {/* Left Card: QRIS & Transfer Guidance */}
-            <div className="lg:col-span-7 bg-white rounded-2xl shadow-xs p-6 md:p-8 flex flex-col justify-between">
+            <div className="lg:col-span-7 lg:sticky lg:top-32 bg-white rounded-2xl shadow-xs p-6 md:p-8 flex flex-col">
               {/* Top Tab Capsule */}
               <div className="bg-neutral-100 rounded-xl p-1.5 flex items-center mb-6">
                 <button
@@ -624,7 +662,7 @@ export default function IuranPage() {
 
               {/* Tab Content: QRIS */}
               {paymentMethodTab === "QRIS" ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch flex-1">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
                   {/* Left Column: QR Code Gray Card */}
                   <div className="bg-neutral-50 rounded-2xl p-5 flex flex-col items-center justify-between text-center gap-4">
                     {/* White QR Box */}
@@ -742,7 +780,7 @@ export default function IuranPage() {
                 </div>
               ) : (
                 /* Tab Content: Transfer Bank */
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start flex-1">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
                   {/* Left Column: Bank Info fields */}
                   <div className="flex flex-col gap-4">
                     <div className="flex flex-col gap-1.5">
@@ -808,7 +846,7 @@ export default function IuranPage() {
             </div>
 
             {/* Right Card: Konfirmasi Pembayaran Form */}
-            <div className="lg:col-span-5 bg-white rounded-2xl shadow-xs p-6 md:p-8 flex flex-col justify-between">
+            <div id="konfirmasi-pembayaran" className="lg:col-span-5 bg-white rounded-2xl shadow-xs p-6 md:p-8 flex flex-col justify-between">
               <div>
                 <h3 className="text-xl md:text-2xl font-bold text-[#BA1B1B] text-center">
                   Konfirmasi Pembayaran
@@ -816,6 +854,47 @@ export default function IuranPage() {
                 <div className="w-44 h-px bg-neutral-200 mx-auto mt-2 mb-6" />
 
                 <form onSubmit={handleSubmitConfirmation} className="flex flex-col gap-4">
+                  {/* Field 0: Pilih Tagihan Iuran Aktif */}
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs font-bold text-neutral-800">
+                      Tagihan Iuran
+                    </label>
+                    {!user ? (
+                      <div className="h-11 bg-neutral-100 text-neutral-500 rounded-xl px-4 flex items-center text-xs md:text-sm font-medium">
+                        Masuk sebagai warga untuk memilih tagihan
+                      </div>
+                    ) : !isResident ? (
+                      <div className="h-11 bg-neutral-100 text-neutral-500 rounded-xl px-4 flex items-center text-xs md:text-sm font-medium">
+                        Pembayaran tagihan hanya untuk akun warga
+                      </div>
+                    ) : activeBillsQuery.isLoading ? (
+                      <div className="h-11 bg-neutral-100 animate-pulse rounded-xl" />
+                    ) : tagihanDropdownOptions.length > 0 ? (
+                      <>
+                        <Dropdown
+                          value={selectedBill ? String(selectedBill.id_iuran) : ""}
+                          onChange={(val) => {
+                            const nextId = Number(val);
+                            setSelectedBillId(Number.isSafeInteger(nextId) ? nextId : null);
+                            setNominalOverride(null);
+                            setFormError(null);
+                          }}
+                          options={tagihanDropdownOptions}
+                          placeholder="Pilih tagihan iuran..."
+                        />
+                        {selectedBill && (
+                          <p className="text-[11px] font-medium text-neutral-500 mt-0.5">
+                            Jatuh tempo: {formatDueDate(selectedBill.jatuh_tempo)}
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      <div className="rounded-xl bg-[#E6F9F3] px-4 py-2.5 text-xs font-semibold text-[#00996D]">
+                        Tidak ada tagihan aktif yang belum dibayar.
+                      </div>
+                    )}
+                  </div>
+
                   {/* Field 1: Nama Kepala Keluarga */}
                   <div className="flex flex-col gap-1">
                     <label htmlFor="nama-kepala-keluarga" className="text-xs font-bold text-neutral-800">
@@ -825,7 +904,7 @@ export default function IuranPage() {
                       id="nama-kepala-keluarga"
                       type="text"
                       value={namaKepalaKeluarga}
-                      onChange={(e) => setNamaKepalaKeluarga(e.target.value)}
+                      onChange={(e) => setNamaOverride(e.target.value)}
                       placeholder="Masukkan Nama"
                       className="w-full h-11 bg-neutral-100 text-neutral-900 placeholder:text-neutral-400 rounded-xl px-4 text-xs md:text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary-500 transition-all"
                     />
@@ -843,7 +922,7 @@ export default function IuranPage() {
                       value={nominalInput}
                       onChange={(e) => {
                         const digits = e.target.value.replace(/\D/g, "");
-                        setNominalInput(formatNominalInput(digits));
+                        setNominalOverride(formatNominalInput(digits));
                       }}
                       placeholder="Rp."
                       className="w-full h-11 bg-neutral-100 text-neutral-900 placeholder:text-neutral-400 rounded-xl px-4 text-xs md:text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary-500 transition-all"
@@ -963,6 +1042,59 @@ export default function IuranPage() {
         </section>
 
       </div>
+
+      <Modal
+        isOpen={paymentSuccessModal !== null}
+        onClose={() => setPaymentSuccessModal(null)}
+        ariaLabel="Pembayaran Berhasil"
+      >
+        {paymentSuccessModal && (
+          <div className="p-6 sm:p-8 text-center">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[#E6F9F3] text-[#00996D]">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M20 6 9 17l-5-5" />
+              </svg>
+            </div>
+            <h3 className="text-xl sm:text-2xl font-bold text-neutral-900">
+              Pembayaran Berhasil Dikirim!
+            </h3>
+            <p className="mt-2 text-sm text-neutral-600 leading-relaxed max-w-md mx-auto">
+              {paymentSuccessModal.message}
+            </p>
+
+            <div className="mt-5 rounded-2xl border border-neutral-100 bg-neutral-50 p-4 text-left text-sm space-y-2.5">
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-neutral-500">Tagihan</span>
+                <span className="font-bold text-neutral-900 text-right">{paymentSuccessModal.billName}</span>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-neutral-500">Nominal</span>
+                <span className="font-bold text-[#BA1B1B]">
+                  Rp. {nominalFormatter.format(paymentSuccessModal.nominal)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-neutral-500">Metode</span>
+                <span className="font-semibold text-neutral-800">{paymentSuccessModal.metode}</span>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-neutral-500">Status</span>
+                <span className="rounded-lg bg-secondary-100 px-2.5 py-0.5 text-xs font-bold text-secondary-600">
+                  Menunggu Konfirmasi
+                </span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setPaymentSuccessModal(null)}
+              className="mt-6 w-full sm:w-auto min-w-44 rounded-xl bg-[#BA1B1B] px-6 py-3 text-sm font-bold text-white shadow-xs transition hover:bg-primary-700 cursor-pointer"
+            >
+              Oke, Mengerti
+            </button>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

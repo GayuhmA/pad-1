@@ -4,6 +4,7 @@ process.env.NODE_ENV = 'production';
 process.env.API_URL = 'https://backend.example';
 const { NextRequest } = require('next/server');
 const { GET: getIuran } = require('../src/app/api/warga/iuran/route.ts');
+const { GET: getIuranAktif } = require('../src/app/api/warga/iuran/aktif/route.ts');
 const { GET: getDetailIuran } = require('../src/app/api/warga/iuran/[id]/route.ts');
 const { POST: postPembayaran } = require('../src/app/api/warga/iuran/[id]/pembayaran/route.ts');
 const { GET: getTransparansi } = require('../src/app/api/warga/iuran/transparansi/route.ts');
@@ -281,4 +282,36 @@ test('pengaturan pembayaran returns bank and QRIS details or falls back cleanly'
   const guestBody = await guestResponse.json();
   assert.equal(guestBody.success, true);
   assert.deepEqual(guestBody.data, body.data);
+});
+
+test('iuran aktif returns active unpaid bills for payment dropdown', async () => {
+  global.fetch = async (url, init) => {
+    assert.equal(String(url), 'https://backend.example/api/warga/iuran/aktif');
+    assert.equal(init.headers.get('Authorization'), 'Bearer test-token');
+    return Response.json({
+      success: true,
+      message: 'Daftar iuran aktif berhasil diambil.',
+      data: [{
+        id_iuran: 12,
+        nama_iuran: 'Iuran RT Agustus 2026',
+        nominal: '50000.00',
+        jatuh_tempo: '2026-08-31',
+        nama_kepala_keluarga: 'Budi Santoso',
+      }],
+    });
+  };
+
+  const res = await getIuranAktif(getRequest('/api/warga/iuran/aktif'));
+  assert.equal(res.status, 200);
+  const json = await res.json();
+  assert.deepEqual(json.data, [{
+    id_iuran: 12,
+    nama_iuran: 'Iuran RT Agustus 2026',
+    nominal: 50000,
+    jatuh_tempo: '2026-08-31',
+    nama_kepala_keluarga: 'Budi Santoso',
+  }]);
+
+  global.fetch = () => { throw new Error('Must not reach backend'); };
+  assert.equal((await getIuranAktif(getRequest('/api/warga/iuran/aktif', ''))).status, 401);
 });

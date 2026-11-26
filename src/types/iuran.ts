@@ -19,11 +19,28 @@ export interface RingkasanPembayaranIuran {
 
 export interface TagihanIuran {
   id_iuran: number;
+  nama_iuran?: string;
+  keterangan?: string | null;
+  is_aktif?: boolean;
   nominal: number;
   jatuh_tempo: string;
   status: StatusIuran;
   periode: PeriodeIuran | null;
   pembayaran_terakhir: RingkasanPembayaranIuran | null;
+}
+
+export interface ActiveIuranOption {
+  id_iuran: number;
+  nama_iuran: string;
+  nominal: number;
+  jatuh_tempo: string;
+  nama_kepala_keluarga: string;
+}
+
+export interface DaftarIuranAktifResponse {
+  success: true;
+  message: string;
+  data: ActiveIuranOption[];
 }
 
 export interface DaftarIuranResponse {

@@ -1,9 +1,14 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { DashboardDuesSkeleton } from '@/components/management/DashboardLoadingSkeleton';
 import { Icon, ManagementLayout } from '@/components/management/ManagementDashboard';
+import { TagihanToolbarActions } from '@/components/management/TagihanModals';
+import { buildPaginationPages, formatDuesCurrency as formatCurrency, formatDuesDate as formatDate } from '@/components/management/dues-utils';
 import { getManagementIuran, updatePaymentSettings, verifyPayment } from '@/lib/api/management-iuran';
+import { STALE_TIME } from '@/lib/query-client';
+import { queryKeys } from '@/lib/query-keys';
 import type {
   FilterTab,
   HouseholdPayment,
@@ -24,16 +29,6 @@ const EMPTY_METRICS: ManagementIuranMetrics = {
 
 const PAGE_SIZE = 5;
 const tabs: FilterTab[] = ['Semua', 'Menunggu', 'Lunas', 'Belum Lunas'];
-
-function formatCurrency(amount: number | null) {
-  if (amount === null) return 'Rp–';
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(amount);
-}
-
-function formatDate(date: string | null) {
-  if (!date) return '–';
-  return new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${date}T00:00:00Z`));
-}
 
 function StatusBadge({ status }: { status: PaymentStatus }) {
   const styles: Record<PaymentStatus, string> = {
@@ -101,20 +96,18 @@ function ConfirmDialog({
 }
 
 export function DuesManagement({ role, userName }: { role: 'admin' | 'panitia'; userName: string }) {
-  const [payments, setPayments] = useState<HouseholdPayment[]>([]);
-  const [metrics, setMetrics] = useState<ManagementIuranMetrics | null>(null);
-  const [hasLoaded, setHasLoaded] = useState(false);
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<FilterTab>('Semua');
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
   const [dialog, setDialog] = useState<{ payment: HouseholdPayment; action: DialogAction } | null>(null);
   const [proof, setProof] = useState<HouseholdPayment | null>(null);
+  const [proofError, setProofError] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
+  const [tagihanFeedback, setTagihanFeedback] = useState<string | null>(null);
 
   // Settings form states
   const [bankName, setBankName] = useState('');
@@ -127,58 +120,37 @@ export function DuesManagement({ role, userName }: { role: 'admin' | 'panitia'; 
   const [settingsSuccess, setSettingsSuccess] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  function applyDuesResponse(res: Awaited<ReturnType<typeof getManagementIuran>>) {
-    setPayments(res.data?.payments ?? []);
-    setMetrics(res.data?.metrics ?? EMPTY_METRICS);
-    if (res.data?.settings) {
-      setBankName(res.data.settings.nama_bank || '');
-      setAccountNumber(res.data.settings.nomor_rekening || '');
-      setAccountHolder(res.data.settings.atas_nama || '');
-      setQrisPreview(res.data.settings.qris_image || null);
-    }
-    setHasLoaded(true);
-    setLoadError(null);
-  }
+  const iuranQuery = useQuery({
+    queryKey: queryKeys.managementIuran({}),
+    queryFn: ({ signal }) => getManagementIuran(undefined, signal),
+    staleTime: STALE_TIME.DYNAMIC,
+  });
+
+  const payments = useMemo(() => iuranQuery.data?.data?.payments ?? [], [iuranQuery.data]);
+  const metrics = iuranQuery.data?.data?.metrics ?? (iuranQuery.isSuccess ? EMPTY_METRICS : null);
+  const hasLoaded = iuranQuery.isSuccess;
+  const loading = iuranQuery.isLoading;
+  const loadError = iuranQuery.error
+    ? (iuranQuery.error instanceof Error ? iuranQuery.error.message : 'Gagal memuat data iuran.')
+    : null;
 
   async function loadData(showLoader = true) {
-    if (showLoader) setLoading(true);
-    try {
-      const res = await getManagementIuran();
-      applyDuesResponse(res);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Gagal memuat data iuran.';
-      console.error('Failed to load management iuran:', err);
-      setLoadError(message);
-    } finally {
-      if (showLoader) setLoading(false);
+    if (showLoader) {
+      await iuranQuery.refetch();
+      return;
     }
+    await queryClient.invalidateQueries({ queryKey: ['management', 'iuran'] });
+    void queryClient.invalidateQueries({ queryKey: ['management', 'dashboard'] });
+    void queryClient.invalidateQueries({ queryKey: ['transparansi-iuran'] });
+    void queryClient.invalidateQueries({ queryKey: ['warga-iuran'] });
   }
-
-  useEffect(() => {
-    let active = true;
-    getManagementIuran()
-      .then((res) => {
-        if (!active) return;
-        applyDuesResponse(res);
-      })
-      .catch((err: unknown) => {
-        if (!active) return;
-        const message = err instanceof Error ? err.message : 'Gagal memuat data iuran.';
-        console.error('Failed to load management iuran:', err);
-        setLoadError(message);
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
 
   const filtered = useMemo(() => {
     const search = query.trim().toLocaleLowerCase('id-ID');
-    return payments.filter((payment) => (activeTab === 'Semua' || payment.status === activeTab) &&
-      (!search || payment.name.toLocaleLowerCase('id-ID').includes(search)));
+    return payments
+      .filter((payment) => (activeTab === 'Semua' || payment.status === activeTab) &&
+        (!search || payment.name.toLocaleLowerCase('id-ID').includes(search)))
+      .sort((a, b) => Number(b.status === 'Menunggu') - Number(a.status === 'Menunggu'));
   }, [payments, activeTab, query]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
@@ -204,12 +176,6 @@ export function DuesManagement({ role, userName }: { role: 'admin' | 'panitia'; 
       } else {
         throw new Error('ID pembayaran tidak valid atau belum diunggah.');
       }
-
-      setPayments((current) => current.map((item) => (
-        item.id === dialog.payment.id
-          ? { ...item, status: dialog.action === 'approve' ? 'Lunas' : 'Belum Lunas' }
-          : item
-      )));
 
       await loadData(false);
       setDialog(null);
@@ -246,6 +212,7 @@ export function DuesManagement({ role, userName }: { role: 'admin' | 'panitia'; 
 
       await updatePaymentSettings(formData);
       setSettingsSuccess('Pengaturan rekening dan QRIS berhasil disimpan.');
+      void queryClient.invalidateQueries({ queryKey: queryKeys.pengaturanPembayaran });
       await loadData(false);
       setTimeout(() => {
         setSettingsOpen(false);
@@ -260,13 +227,7 @@ export function DuesManagement({ role, userName }: { role: 'admin' | 'panitia'; 
   }
 
   function paginationPages(): (number | '…')[] {
-    if (pageCount <= 5) return Array.from({ length: pageCount }, (_, index) => index + 1);
-    const pages: (number | '…')[] = [1];
-    if (currentPage > 3) pages.push('…');
-    for (let number = Math.max(2, currentPage - 1); number <= Math.min(pageCount - 1, currentPage + 1); number++) pages.push(number);
-    if (currentPage < pageCount - 2) pages.push('…');
-    pages.push(pageCount);
-    return pages;
+    return buildPaginationPages(currentPage, pageCount);
   }
 
   return <ManagementLayout role={role} userName={userName} title="Kelola Iuran" activeItem="dues">
@@ -327,6 +288,14 @@ export function DuesManagement({ role, userName }: { role: 'admin' | 'panitia'; 
         <button
           type="button"
           onClick={() => {
+            const currentSettings = iuranQuery.data?.data?.settings;
+            if (currentSettings) {
+              setBankName(currentSettings.nama_bank || '');
+              setAccountNumber(currentSettings.nomor_rekening || '');
+              setAccountHolder(currentSettings.atas_nama || '');
+              setQrisPreview(currentSettings.qris_image || null);
+            }
+            setQrisFile(null);
             setSettingsError(null);
             setSettingsSuccess(null);
             setSettingsOpen(true);
@@ -340,19 +309,38 @@ export function DuesManagement({ role, userName }: { role: 'admin' | 'panitia'; 
         <section aria-labelledby="dues-table-title" className="overflow-hidden rounded-2xl border border-primary-100 bg-white shadow-[0_3px_16px_rgba(34,24,24,0.025)]">
           <h2 id="dues-table-title" className="sr-only">Daftar pembayaran iuran</h2>
           <div className="flex flex-col gap-4 border-b border-neutral-100 p-4 sm:p-5">
-            <div role="tablist" aria-label="Filter status pembayaran" className="flex flex-wrap gap-2">
-              {tabs.map((tab) => (
+            {tagihanFeedback && (
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-2.5 text-xs font-medium text-emerald-700">
+                <span>{tagihanFeedback}</span>
                 <button
-                  key={tab}
                   type="button"
-                  role="tab"
-                  aria-selected={activeTab === tab}
-                  onClick={() => changeTab(tab)}
-                  className={`min-h-9 rounded-xl px-4 text-sm font-semibold transition-colors ${activeTab === tab ? 'bg-primary-100 text-primary-700' : 'border border-neutral-200 bg-white text-neutral-500 hover:border-primary-200 hover:text-primary-700'}`}
+                  aria-label="Tutup notifikasi tagihan"
+                  onClick={() => setTagihanFeedback(null)}
+                  className="text-emerald-600 hover:text-emerald-800"
                 >
-                  {tab}
+                  <Icon name="close" className="size-4" />
                 </button>
-              ))}
+              </div>
+            )}
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div role="tablist" aria-label="Filter status pembayaran" className="flex flex-wrap gap-2">
+                {tabs.map((tab) => (
+                  <button
+                    key={tab}
+                    type="button"
+                    role="tab"
+                    aria-selected={activeTab === tab}
+                    onClick={() => changeTab(tab)}
+                    className={`min-h-9 rounded-xl px-4 text-sm font-semibold transition-colors ${activeTab === tab ? 'bg-primary-100 text-primary-700' : 'border border-neutral-200 bg-white text-neutral-500 hover:border-primary-200 hover:text-primary-700'}`}
+                  >
+                    {tab}
+                  </button>
+                ))}
+              </div>
+              <TagihanToolbarActions
+                onTagihanChanged={() => loadData(false)}
+                onFeedback={setTagihanFeedback}
+              />
             </div>
             <div className="relative max-w-[460px]">
               <label htmlFor="dues-search" className="sr-only">Cari nama kepala keluarga</label>
@@ -394,7 +382,10 @@ export function DuesManagement({ role, userName }: { role: 'admin' | 'panitia'; 
                       {payment.proofUrl || payment.date ? (
                         <button
                           type="button"
-                          onClick={() => setProof(payment)}
+                          onClick={() => {
+                            setProofError(false);
+                            setProof(payment);
+                          }}
                           className="text-sm font-medium text-primary-600 hover:text-primary-700 hover:underline"
                         >
                           Lihat Bukti
@@ -525,25 +516,22 @@ export function DuesManagement({ role, userName }: { role: 'admin' | 'panitia'; 
             </button>
           </div>
           <div className="mt-5 flex min-h-72 items-center justify-center overflow-hidden rounded-xl border border-dashed border-neutral-200 bg-neutral-50 p-4 text-center">
-            {proof.proofUrl ? (
+            {proof.proofUrl && !proofError ? (
               <img
                 src={proof.proofUrl}
                 alt={`Bukti pembayaran ${proof.name}`}
                 className="max-h-80 max-w-full rounded-lg object-contain shadow-sm"
-                onError={(e) => {
-                  (e.target as HTMLElement).style.display = 'none';
-                  const fallback = (e.target as HTMLElement).nextElementSibling;
-                  if (fallback) (fallback as HTMLElement).style.display = 'block';
-                }}
+                onError={() => setProofError(true)}
               />
-            ) : null}
-            <div style={{ display: proof.proofUrl ? 'none' : 'block' }}>
-              <Icon name="image" className="mx-auto size-10 text-neutral-300" />
-              <p className="mt-3 text-sm font-medium text-neutral-500">Pratinjau bukti pembayaran</p>
-              <p className="mt-1 text-xs text-neutral-400">
-                {proof.proofUrl ? 'File bukti tidak dapat ditampilkan dari server' : 'Belum ada bukti pembayaran terlampir'}
-              </p>
-            </div>
+            ) : (
+              <div>
+                <Icon name="image" className="mx-auto size-10 text-neutral-300" />
+                <p className="mt-3 text-sm font-medium text-neutral-500">Pratinjau bukti pembayaran</p>
+                <p className="mt-1 text-xs text-neutral-400">
+                  {proof.proofUrl ? 'File bukti tidak dapat ditampilkan dari server' : 'Belum ada bukti pembayaran terlampir'}
+                </p>
+              </div>
+            )}
           </div>
         </section>
       </div>
@@ -559,8 +547,8 @@ export function DuesManagement({ role, userName }: { role: 'admin' | 'panitia'; 
           }}
           className="absolute inset-0 bg-neutral-900/40"
         />
-        <section className="relative z-10 w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
-          <div className="flex items-start justify-between gap-4">
+        <section className="relative z-10 flex max-h-[88vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+          <div className="flex shrink-0 items-start justify-between gap-4 border-b border-neutral-100 px-6 py-4">
             <div>
               <h2 id="settings-title" className="text-lg font-semibold text-neutral-900">Pengaturan Rekening dan QRIS</h2>
               <p className="mt-1 text-sm text-neutral-500">Informasi pembayaran iuran warga</p>
@@ -576,19 +564,19 @@ export function DuesManagement({ role, userName }: { role: 'admin' | 'panitia'; 
             </button>
           </div>
 
-          {settingsError && (
-            <div className="mt-4 rounded-xl border border-primary-200 bg-primary-50 p-3 text-xs leading-5 text-primary-700">
-              {settingsError}
-            </div>
-          )}
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-5">
+            {settingsError && (
+              <div className="rounded-xl border border-primary-200 bg-primary-50 p-3 text-xs leading-5 text-primary-700">
+                {settingsError}
+              </div>
+            )}
 
-          {settingsSuccess && (
-            <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs leading-5 text-emerald-700">
-              {settingsSuccess}
-            </div>
-          )}
+            {settingsSuccess && (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs leading-5 text-emerald-700">
+                {settingsSuccess}
+              </div>
+            )}
 
-          <div className="mt-5 space-y-4">
             <label className="block space-y-1.5">
               <span className="text-sm font-medium text-neutral-700">Nama bank</span>
               <input
@@ -647,7 +635,7 @@ export function DuesManagement({ role, userName }: { role: 'admin' | 'panitia'; 
             </div>
           </div>
 
-          <div className="mt-6 flex justify-end">
+          <div className="flex shrink-0 justify-end border-t border-neutral-100 bg-neutral-50/50 px-6 py-4">
             <button
               type="button"
               disabled={savingSettings}

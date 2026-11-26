@@ -1,5 +1,6 @@
 import type {
   AjukanPembayaranIuranResponse,
+  DaftarIuranAktifResponse,
   DaftarIuranResponse,
   DetailIuranResponse,
   PengaturanPembayaranResponse,
@@ -10,6 +11,10 @@ import { apiFormRequest, apiRequest } from './client';
 
 export function getDaftarIuran(signal?: AbortSignal): Promise<DaftarIuranResponse> {
   return apiRequest('/api/warga/iuran', { signal });
+}
+
+export function getDaftarIuranAktif(signal?: AbortSignal): Promise<DaftarIuranAktifResponse> {
+  return apiRequest('/api/warga/iuran/aktif', { signal });
 }
 
 export function getDetailIuran(idIuran: number, signal?: AbortSignal): Promise<DetailIuranResponse> {

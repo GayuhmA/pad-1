@@ -3,7 +3,9 @@ import 'server-only';
 import { Agent } from 'undici';
 import { isValidIsoDate } from '@/lib/lomba-date';
 import type {
+  ActiveIuranOption,
   AjukanPembayaranIuranResponse,
+  DaftarIuranAktifResponse,
   DaftarIuranResponse,
   DetailIuran,
   DetailIuranResponse,
@@ -135,11 +137,41 @@ function bill(value: unknown): TagihanIuran {
   const payments = paymentsFrom(item);
   return {
     id_iuran: integer(item.id_iuran),
+    ...(typeof item.nama_iuran === 'string' && item.nama_iuran.trim()
+      ? { nama_iuran: item.nama_iuran.trim() }
+      : {}),
+    ...(item.keterangan !== undefined
+      ? { keterangan: nullableText(item.keterangan) }
+      : {}),
+    ...(typeof item.is_aktif === 'boolean' ? { is_aktif: item.is_aktif } : {}),
     nominal: amount(item.nominal),
     jatuh_tempo: isoDate(item.jatuh_tempo),
     status: item.status,
     periode: period(item),
     pembayaran_terakhir: latestPayment(item, payments),
+  };
+}
+
+function activeBillOption(value: unknown): ActiveIuranOption {
+  const item = record(value);
+  return {
+    id_iuran: integer(item.id_iuran),
+    nama_iuran: text(item.nama_iuran),
+    nominal: amount(item.nominal),
+    jatuh_tempo: isoDate(item.jatuh_tempo),
+    nama_kepala_keluarga: typeof item.nama_kepala_keluarga === 'string'
+      ? item.nama_kepala_keluarga.trim()
+      : '',
+  };
+}
+
+export function readDaftarIuranAktifResponse(value: unknown): DaftarIuranAktifResponse {
+  const response = record(value);
+  if (response.success !== true || !Array.isArray(response.data)) invalidResponse();
+  return {
+    success: true,
+    message: text(response.message),
+    data: response.data.map(activeBillOption),
   };
 }
 
@@ -287,6 +319,16 @@ async function performRequest(endpoint: string, token: string | undefined, init:
   }
 
   if (!response.ok) {
+    let backendMessage: string | null = null;
+    try {
+      const errorBody = await response.json();
+      if (errorBody && typeof errorBody === 'object' && !Array.isArray(errorBody) &&
+          typeof (errorBody as Record<string, unknown>).message === 'string') {
+        const rawMsg = ((errorBody as Record<string, unknown>).message as string).trim();
+        if (rawMsg) backendMessage = rawMsg;
+      }
+    } catch { /* ignore */ }
+
     const messages: Record<number, string> = {
       401: 'Sesi telah berakhir. Silakan masuk kembali.',
       403: 'Akun tidak terhubung dengan data warga.',
@@ -297,8 +339,11 @@ async function performRequest(endpoint: string, token: string | undefined, init:
         : 'Filter iuran tidak valid.',
       429: 'Terlalu banyak permintaan. Tunggu sebentar sebelum mencoba lagi.',
     };
-    throw new IuranServiceError(messages[response.status] ? response.status : 502,
-      messages[response.status] ?? 'Layanan iuran sedang bermasalah. Silakan coba lagi.');
+    const fallback = messages[response.status] ?? 'Layanan iuran sedang bermasalah. Silakan coba lagi.';
+    const finalMessage = response.status === 422 || response.status === 409
+      ? (backendMessage ?? fallback)
+      : fallback;
+    throw new IuranServiceError(messages[response.status] ? response.status : 502, finalMessage);
   }
 
   try { return await response.json(); } catch { invalidResponse(); }
@@ -306,6 +351,10 @@ async function performRequest(endpoint: string, token: string | undefined, init:
 
 export async function backendDaftarIuran(token: string): Promise<DaftarIuranResponse> {
   return readDaftarIuranResponse(await performRequest('/api/warga/iuran', token, { method: 'GET' }));
+}
+
+export async function backendDaftarIuranAktif(token: string): Promise<DaftarIuranAktifResponse> {
+  return readDaftarIuranAktifResponse(await performRequest('/api/warga/iuran/aktif', token, { method: 'GET' }));
 }
 
 export async function backendDetailIuran(token: string, idIuran: number): Promise<DetailIuranResponse> {
