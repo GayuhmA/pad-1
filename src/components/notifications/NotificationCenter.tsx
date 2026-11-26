@@ -3,11 +3,9 @@
 import { useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import { Button } from '@/components/Button';
-import { AgendaBanner } from '@/components/notifications/AgendaBanner';
 import { NotificationCard } from '@/components/notifications/NotificationCard';
 import { NotificationDetails } from '@/components/notifications/NotificationDetails';
 import { PageSkeleton } from '@/components/skeletons/PageSkeleton';
-import { NEXT_AGENDA } from '@/lib/data/notifications';
 import { filterNotifications, type NotificationFilter } from '@/lib/notifications';
 import { useNotificationStore } from '@/stores/notification-store';
 
@@ -66,7 +64,6 @@ export function NotificationCenter() {
     <div className="min-h-screen bg-linear-to-b from-primary-100 to-white">
       <div className="mx-auto flex w-full max-w-360 flex-col gap-14 px-5 py-12 md:gap-24 md:px-15 md:py-24">
         <h1 className="sr-only">Notifikasi</h1>
-        <AgendaBanner agenda={NEXT_AGENDA} now={now} />
 
         <section aria-label="Daftar notifikasi" className="mx-auto w-full max-w-240">
           <div className="relative mx-auto mb-10 max-w-188 sm:mb-12">

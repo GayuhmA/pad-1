@@ -410,17 +410,6 @@ function NotifikasiSkeleton() {
   return (
     <div className="min-h-screen grow bg-linear-to-b from-primary-100 to-white">
       <div className="mx-auto flex w-full max-w-360 flex-col gap-14 px-5 py-12 md:gap-24 md:px-15 md:py-24">
-        <section className="flex flex-col justify-between gap-8 rounded-xl bg-white/90 px-6 py-8 shadow-xl lg:min-h-54 lg:flex-row lg:items-center">
-          <div className="flex-1 space-y-4">
-            <SkeletonBlock className="h-5 w-48 rounded-md" />
-            <SkeletonBlock className="h-9 w-80 max-w-full rounded-xl" />
-            <SkeletonBlock className="h-5 w-64 max-w-full rounded-md" />
-          </div>
-          <div className="flex items-center gap-3 self-start rounded-xl bg-neutral-100 p-4 lg:self-center">
-            {[1, 2, 3].map((box) => <SkeletonBlock key={box} className="h-16 w-14 rounded-xl sm:h-25 sm:w-25" />)}
-          </div>
-        </section>
-
         <section className="mx-auto w-full max-w-240">
           <SkeletonBlock className="mx-auto mb-10 h-13 max-w-188 rounded-xl bg-white/90 shadow-lg sm:mb-12" />
           <div className="mb-5 flex flex-wrap gap-2 sm:px-5">
