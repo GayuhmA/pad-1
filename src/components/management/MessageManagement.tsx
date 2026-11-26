@@ -1,57 +1,23 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { DashboardMessageSkeleton } from '@/components/management/DashboardLoadingSkeleton';
 import { Icon, ManagementLayout } from '@/components/management/ManagementDashboard';
 import { Modal } from '@/components/Modal';
+import {
+  createManagementMessage,
+  deleteManagementMessage,
+  getManagementMessages,
+  sendManagementMessage,
+  updateManagementMessage,
+} from '@/lib/api/management-pesan';
+import { STALE_TIME } from '@/lib/query-client';
+import { queryKeys } from '@/lib/query-keys';
+import { useAuthStore } from '@/stores/auth-store';
+import type { ManagementMessageItem, MessageStatus } from '@/types/management-pesan';
 
-type MessageStatus = 'sent' | 'draft';
 type MessageFilter = 'all' | MessageStatus;
-interface MessageItem {
-  id: string;
-  subject: string;
-  body: string;
-  status: MessageStatus;
-  createdAt: string;
-  updatedAt: string;
-}
-
-const STORAGE_KEY = 'pad-management-messages:v1';
-const seedMessages: MessageItem[] = [
-  {
-    id: 'sample-final-lomba',
-    subject: 'Informasi Final Lomba dan Malam Tirakatan HUT RI ke-81 RW 04',
-    body: 'Bapak/Ibu warga RW 04 yang kami hormati,\n\nSehubungan dengan persiapan babak Final Lomba Kemerdekaan dan Malam Tirakatan HUT RI ke-81 yang akan diselenggarakan malam nanti pukul 19:30 WIB di Balai Warga, kami mengimbau seluruh warga untuk memperhatikan hal-hal berikut:\n\n1. Babak Final Tarik Tambang & Balap Karung dimulai tepat pukul 14:00 WIB di Lapangan Utama.\n2. Parkir kendaraan roda dua dialihkan ke halaman Musholla & Pos Ronda RT 02 demi kenyamanan lalu lintas anak-anak.\n3. Kupon konsumsi dan doorprize tirakatan dapat diambil di meja panitia penerima tamu mulai pukul 19:00 WIB.\n\nMari kita semarakkan perayaan kemerdekaan dengan tertib, guyub, dan penuh semangat kebersamaan!\n\nSalam hangat,\nPanitia Peringatan Kemerdekaan RI Ke-81 RW 04',
-    status: 'sent',
-    createdAt: '2026-08-15T08:10:00.000Z',
-    updatedAt: '2026-08-15T08:10:00.000Z',
-  },
-  {
-    id: 'sample-penyisihan',
-    subject: 'Panggilan babak penyisihan',
-    body: 'Peserta lomba diharapkan hadir tepat waktu untuk mengikuti babak penyisihan sesuai jadwal dan ketentuan yang telah ditetapkan panitia.',
-    status: 'sent',
-    createdAt: '2026-08-15T06:20:00.000Z',
-    updatedAt: '2026-08-15T06:20:00.000Z',
-  },
-  {
-    id: 'sample-kupon',
-    subject: 'Pengingat pengambilan kupon',
-    body: 'Warga diimbau segera mengambil kupon konsumsi dan doorprize di meja panitia penerima tamu sebelum acara tirakatan dimulai.',
-    status: 'draft',
-    createdAt: '2026-08-14T09:00:00.000Z',
-    updatedAt: '2026-08-14T09:00:00.000Z',
-  },
-];
-
-function isMessage(value: unknown): value is MessageItem {
-  if (!value || typeof value !== 'object') return false;
-  const item = value as Partial<MessageItem>;
-  return typeof item.id === 'string' && typeof item.subject === 'string' && typeof item.body === 'string'
-    && (item.status === 'sent' || item.status === 'draft')
-    && typeof item.createdAt === 'string' && Number.isFinite(Date.parse(item.createdAt))
-    && typeof item.updatedAt === 'string' && Number.isFinite(Date.parse(item.updatedAt));
-}
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' }).format(new Date(value));
@@ -69,62 +35,73 @@ function formatAge(value: string, now: number) {
   return formatDate(value);
 }
 
-function createId() {
-  return typeof crypto !== 'undefined' && 'randomUUID' in crypto
-    ? crypto.randomUUID()
-    : `message-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-}
-
 function MessageComposer({
   initialMessage,
   onClose,
   onSave,
   onSend,
 }: {
-  initialMessage: MessageItem | null;
+  initialMessage: ManagementMessageItem | null;
   onClose: () => void;
-  onSave: (subject: string, body: string) => void;
-  onSend: (subject: string, body: string) => void;
+  onSave: (subject: string, body: string) => Promise<void>;
+  onSend: (subject: string, body: string) => Promise<void>;
 }) {
   const [subject, setSubject] = useState(initialMessage?.subject ?? '');
   const [body, setBody] = useState(initialMessage?.body ?? '');
   const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const valid = subject.trim().length > 0 && body.trim().length > 0;
 
-  function submit(event: FormEvent<HTMLFormElement>, action: 'save' | 'send') {
-    event.preventDefault();
+  async function submitAction(action: 'save' | 'send') {
+    if (submitting) return;
     if (action === 'send' && !valid) {
       setError('Isi subjek dan pesan sebelum mengirim.');
       return;
     }
-    (action === 'send' ? onSend : onSave)(subject.trim(), body.trim());
+    if (action === 'save' && !subject.trim() && !body.trim()) {
+      setError('Isi subjek atau pesan terlebih dahulu.');
+      return;
+    }
+    setError('');
+    setSubmitting(true);
+    try {
+      await (action === 'send' ? onSend : onSave)(subject.trim(), body.trim());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Gagal memproses pesan. Silakan coba lagi.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    void submitAction('send');
   }
 
   return (
     <Modal isOpen onClose={onClose} ariaLabel={initialMessage ? 'Edit draft pesan' : 'Tulis pesan'}>
-      <form onSubmit={(event) => submit(event, 'send')}>
+      <form onSubmit={submit}>
         <div className="flex items-start justify-between gap-4 border-b border-neutral-100 px-5 py-5 sm:px-7">
           <div><h2 className="text-xl font-semibold text-neutral-900">{initialMessage ? 'Edit Draft' : 'Tulis Pesan'}</h2><p className="mt-1 text-sm text-neutral-500">Pesan akan ditujukan kepada seluruh warga.</p></div>
-          <button type="button" onClick={onClose} aria-label="Tutup" className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-50"><Icon name="close" /></button>
+          <button type="button" onClick={onClose} disabled={submitting} aria-label="Tutup" className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-50 disabled:opacity-50"><Icon name="close" /></button>
         </div>
         <div className="space-y-5 px-5 py-6 sm:px-7">
           <div>
             <label htmlFor="message-subject" className="mb-2 block text-sm font-semibold text-neutral-700">Subjek</label>
-            <input id="message-subject" value={subject} onChange={(event) => { setSubject(event.target.value); setError(''); }} maxLength={140} placeholder="Contoh: Informasi kegiatan warga" className="h-12 w-full rounded-xl border border-neutral-200 px-4 text-sm text-neutral-800 placeholder:text-neutral-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600" />
+            <input id="message-subject" value={subject} onChange={(event) => { setSubject(event.target.value); setError(''); }} maxLength={140} disabled={submitting} placeholder="Contoh: Informasi kegiatan warga" className="h-12 w-full rounded-xl border border-neutral-200 px-4 text-sm text-neutral-800 placeholder:text-neutral-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600 disabled:opacity-60" />
             <p className="mt-1 text-right text-xs text-neutral-400">{subject.length}/140</p>
           </div>
           <div>
             <label htmlFor="message-body" className="mb-2 block text-sm font-semibold text-neutral-700">Isi pesan</label>
-            <textarea id="message-body" value={body} onChange={(event) => { setBody(event.target.value); setError(''); }} maxLength={10000} rows={10} placeholder="Tulis informasi yang ingin disampaikan kepada warga…" className="w-full resize-y rounded-xl border border-neutral-200 px-4 py-3 text-sm leading-6 text-neutral-800 placeholder:text-neutral-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600" />
+            <textarea id="message-body" value={body} onChange={(event) => { setBody(event.target.value); setError(''); }} maxLength={10000} rows={10} disabled={submitting} placeholder="Tulis informasi yang ingin disampaikan kepada warga…" className="w-full resize-y rounded-xl border border-neutral-200 px-4 py-3 text-sm leading-6 text-neutral-800 placeholder:text-neutral-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600 disabled:opacity-60" />
             <p className="mt-1 text-right text-xs text-neutral-400">{body.length}/10.000</p>
           </div>
           {error && <p role="alert" className="text-sm font-medium text-error-100">{error}</p>}
-          <p className="rounded-xl bg-neutral-50 px-4 py-3 text-xs leading-5 text-neutral-500">Mode pratinjau: pesan dan draft tersimpan di browser ini saja.</p>
         </div>
         <div className="flex flex-col-reverse gap-2 border-t border-neutral-100 px-5 py-4 sm:flex-row sm:justify-end sm:px-7">
-          <button type="button" onClick={onClose} className="min-h-11 rounded-xl border border-neutral-200 px-4 text-sm font-semibold text-neutral-600 hover:bg-neutral-50">Batal</button>
-          <button type="button" onClick={() => onSave(subject.trim(), body.trim())} className="min-h-11 rounded-xl border border-primary-100 px-4 text-sm font-semibold text-primary-700 transition-colors hover:bg-primary-100/40">Simpan Draft</button>
-          <button type="submit" disabled={!valid} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-primary-600 px-5 text-sm font-semibold text-white transition-colors hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"><Icon name="mail" className="size-4" />Kirim Pesan</button>
+          <button type="button" onClick={onClose} disabled={submitting} className="min-h-11 rounded-xl border border-neutral-200 px-4 text-sm font-semibold text-neutral-600 hover:bg-neutral-50 disabled:opacity-50">Batal</button>
+          <button type="button" onClick={() => void submitAction('save')} disabled={submitting} className="min-h-11 rounded-xl border border-primary-100 px-4 text-sm font-semibold text-primary-700 transition-colors hover:bg-primary-100/40 disabled:opacity-50">Simpan Draft</button>
+          <button type="submit" disabled={!valid || submitting} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-primary-600 px-5 text-sm font-semibold text-white transition-colors hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"><Icon name="mail" className="size-4" />Kirim Pesan</button>
         </div>
       </form>
     </Modal>
@@ -132,15 +109,16 @@ function MessageComposer({
 }
 
 export function MessageManagement({ role, userName }: { role: 'admin' | 'panitia'; userName: string }) {
-  const [messages, setMessages] = useState<MessageItem[]>([]);
+  const queryClient = useQueryClient();
+  const userId = useAuthStore((state) => state.user?.id);
   const [filter, setFilter] = useState<MessageFilter>('all');
   const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [composerOpen, setComposerOpen] = useState(false);
-  const [editingDraft, setEditingDraft] = useState<MessageItem | null>(null);
+  const [editingDraft, setEditingDraft] = useState<ManagementMessageItem | null>(null);
   const [notice, setNotice] = useState('');
-  const [storageReady, setStorageReady] = useState(false);
-  const [storageWarning, setStorageWarning] = useState('');
+  const [actionError, setActionError] = useState('');
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -148,44 +126,20 @@ export function MessageManagement({ role, userName }: { role: 'admin' | 'panitia
     return () => window.clearInterval(timer);
   }, []);
 
-  useEffect(() => {
-    const hydrate = window.setTimeout(() => {
-      try {
-        const stored = window.localStorage.getItem(STORAGE_KEY);
-        if (stored !== null) {
-          const parsed: unknown = JSON.parse(stored);
-          if (Array.isArray(parsed) && parsed.every(isMessage)) {
-            const sorted = [...parsed].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
-            setMessages(sorted);
-            setSelectedId(sorted[0]?.id ?? null);
-          } else {
-            setMessages(seedMessages);
-            setSelectedId(seedMessages[0]?.id ?? null);
-            setStorageWarning('Data pesan lokal tidak terbaca. Daftar contoh digunakan sementara.');
-          }
-        } else {
-          setMessages(seedMessages);
-          setSelectedId(seedMessages[0]?.id ?? null);
-        }
-      } catch {
-        setMessages(seedMessages);
-        setSelectedId(seedMessages[0]?.id ?? null);
-        setStorageWarning('Penyimpanan browser tidak tersedia. Perubahan hanya tersimpan selama halaman dibuka.');
-      } finally {
-        setStorageReady(true);
-      }
-    }, 0);
-    return () => window.clearTimeout(hydrate);
-  }, []);
+  const pesanQuery = useQuery({
+    queryKey: queryKeys.managementPesan(userId),
+    queryFn: ({ signal }) =>
+      getManagementMessages(undefined, signal).then((response) =>
+        [...response.data].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)),
+      ),
+    staleTime: STALE_TIME.DYNAMIC,
+  });
 
-  function persist(nextMessages: MessageItem[]) {
-    if (!storageReady) return;
-    try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(nextMessages));
-    } catch {
-      setStorageWarning('Penyimpanan browser penuh atau tidak tersedia. Perubahan hanya tersimpan selama halaman dibuka.');
-    }
-  }
+  const messages = useMemo(() => pesanQuery.data ?? [], [pesanQuery.data]);
+  const loading = pesanQuery.isLoading;
+  const loadError = actionError || (pesanQuery.error
+    ? (pesanQuery.error instanceof Error ? pesanQuery.error.message : 'Gagal memuat daftar pesan.')
+    : '');
 
   const visibleMessages = useMemo(() => {
     const search = query.trim().toLocaleLowerCase('id-ID');
@@ -204,39 +158,65 @@ export function MessageManagement({ role, userName }: { role: 'admin' | 'panitia
     setEditingDraft(null);
   }, []);
 
-  function openComposer(message: MessageItem | null = null) {
+  function openComposer(message: ManagementMessageItem | null = null) {
     setEditingDraft(message);
     setComposerOpen(true);
     setNotice('');
   }
 
-  function saveMessage(subject: string, body: string, status: MessageStatus) {
-    const timestamp = new Date().toISOString();
-    const id = editingDraft?.id ?? createId();
-    const next: MessageItem = {
-      id,
-      subject: subject || 'Draft tanpa subjek',
-      body,
-      status,
-      createdAt: editingDraft?.createdAt ?? timestamp,
-      updatedAt: timestamp,
-    };
-    const updatedMessages = [next, ...messages.filter((message) => message.id !== id)];
-    persist(updatedMessages);
-    setMessages(updatedMessages);
-    setSelectedId(id);
+  async function saveMessage(subject: string, body: string, status: MessageStatus) {
+    const safeSubject = subject || 'Draft tanpa subjek';
+    let saved: ManagementMessageItem;
+
+    if (editingDraft) {
+      const updated = await updateManagementMessage(editingDraft.id, { subject: safeSubject, body });
+      saved = updated.data;
+      if (status === 'sent' && saved.status !== 'sent') {
+        const sent = await sendManagementMessage(saved.id);
+        saved = sent.data;
+      }
+    } else {
+      const created = await createManagementMessage({ subject: safeSubject, body, status });
+      saved = created.data;
+      if (status === 'sent' && saved.status !== 'sent') {
+        const sent = await sendManagementMessage(saved.id);
+        saved = sent.data;
+      }
+    }
+
+    queryClient.setQueryData<ManagementMessageItem[]>(
+      queryKeys.managementPesan(userId),
+      (prev = []) => [saved, ...prev.filter((message) => message.id !== saved.id)],
+    );
+    void queryClient.invalidateQueries({ queryKey: queryKeys.managementPesan(userId) });
+    if (status === 'sent') {
+      void queryClient.invalidateQueries({ queryKey: ['notifikasi'] });
+    }
+    setSelectedId(saved.id);
     setFilter(status === 'draft' ? 'draft' : 'all');
-    setNotice(status === 'draft' ? 'Draft berhasil disimpan di browser ini.' : 'Pesan ditandai terkirim pada pratinjau ini.');
+    setNotice(status === 'draft' ? 'Draft berhasil disimpan.' : 'Pesan berhasil dikirim.');
     closeComposer();
   }
 
-  function deleteDraft(message: MessageItem) {
-    if (message.status !== 'draft') return;
-    const updatedMessages = messages.filter((item) => item.id !== message.id);
-    persist(updatedMessages);
-    setMessages(updatedMessages);
-    setSelectedId(null);
-    setNotice('Draft dihapus dari browser ini.');
+  async function deleteDraft(message: ManagementMessageItem) {
+    if (message.status !== 'draft' || deletingId) return;
+    setDeletingId(message.id);
+    setNotice('');
+    setActionError('');
+    try {
+      await deleteManagementMessage(message.id);
+      queryClient.setQueryData<ManagementMessageItem[]>(
+        queryKeys.managementPesan(userId),
+        (prev = []) => prev.filter((item) => item.id !== message.id),
+      );
+      void queryClient.invalidateQueries({ queryKey: queryKeys.managementPesan(userId) });
+      setSelectedId((prev) => (prev === message.id ? null : prev));
+      setNotice('Draft berhasil dihapus.');
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Gagal menghapus draft.');
+    } finally {
+      setDeletingId(null);
+    }
   }
 
   const filters: { id: MessageFilter; label: string; count: number }[] = [
@@ -253,7 +233,7 @@ export function MessageManagement({ role, userName }: { role: 'admin' | 'panitia
           <button type="button" onClick={() => openComposer()} className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-primary-600 px-5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"><span aria-hidden="true" className="text-xl leading-none">+</span>Tulis Pesan</button>
         </div>
 
-        {!storageReady ? (
+        {loading ? (
           <DashboardMessageSkeleton />
         ) : (
           <>
@@ -262,7 +242,7 @@ export function MessageManagement({ role, userName }: { role: 'admin' | 'panitia
             </div>
 
             {notice && <p role="status" className="rounded-xl border border-success-100 bg-success-10 px-4 py-3 text-sm font-medium text-success-200">{notice}</p>}
-            {storageWarning && <p role="status" className="rounded-xl border border-secondary-200 bg-secondary-100/40 px-4 py-3 text-sm text-secondary-700">{storageWarning}</p>}
+            {loadError && <p role="status" className="rounded-xl border border-secondary-200 bg-secondary-100/40 px-4 py-3 text-sm text-secondary-700">{loadError}</p>}
 
             <section aria-label="Riwayat pesan" className="grid min-h-[min(68vh,760px)] gap-5 lg:grid-cols-[minmax(300px,0.82fr)_minmax(0,1.3fr)]">
               <div className="flex min-h-[560px] flex-col overflow-hidden rounded-xl border border-primary-100 bg-white">
@@ -290,7 +270,7 @@ export function MessageManagement({ role, userName }: { role: 'admin' | 'panitia
                   <div className="flex flex-wrap items-center justify-between gap-2 px-5 pt-5 text-xs text-neutral-400 sm:px-7 sm:pt-7"><time dateTime={selectedMessage.updatedAt}>{formatDate(selectedMessage.updatedAt)}</time><span>{formatAge(selectedMessage.updatedAt, now)}</span></div>
                   <div className="mx-5 mt-4 border-b border-neutral-200 pb-4 text-center sm:mx-7"><h2 className="text-lg font-semibold leading-7 text-neutral-900 sm:text-xl">{selectedMessage.subject}</h2></div>
                   <div className="min-h-0 flex-1 overflow-y-auto whitespace-pre-wrap px-5 py-5 text-sm leading-7 text-neutral-600 sm:px-7 sm:py-6 sm:text-base">{selectedMessage.body || <span className="italic text-neutral-400">Draft ini belum memiliki isi pesan.</span>}</div>
-                  <div className="flex flex-wrap items-center justify-between gap-3 border-t border-neutral-100 px-5 py-4 sm:px-7"><span className={`text-xs font-medium ${selectedMessage.status === 'sent' ? 'text-neutral-400' : 'text-secondary-700'}`}>{selectedMessage.status === 'sent' ? 'Terkirim' : 'Draft'}</span>{selectedMessage.status === 'draft' && <div className="flex gap-2"><button type="button" onClick={() => openComposer(selectedMessage)} className="min-h-10 rounded-lg border border-neutral-200 px-3 text-sm font-semibold text-neutral-700 hover:bg-neutral-50">Edit Draft</button><button type="button" onClick={() => deleteDraft(selectedMessage)} className="min-h-10 rounded-lg px-3 text-sm font-semibold text-error-100 hover:bg-error-10">Hapus</button></div>}</div>
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-t border-neutral-100 px-5 py-4 sm:px-7"><span className={`text-xs font-medium ${selectedMessage.status === 'sent' ? 'text-neutral-400' : 'text-secondary-700'}`}>{selectedMessage.status === 'sent' ? 'Terkirim' : 'Draft'}</span>{selectedMessage.status === 'draft' && <div className="flex gap-2"><button type="button" onClick={() => openComposer(selectedMessage)} className="min-h-10 rounded-lg border border-neutral-200 px-3 text-sm font-semibold text-neutral-700 hover:bg-neutral-50">Edit Draft</button><button type="button" disabled={deletingId === selectedMessage.id} onClick={() => void deleteDraft(selectedMessage)} className="min-h-10 rounded-lg px-3 text-sm font-semibold text-error-100 hover:bg-error-10 disabled:opacity-50">Hapus</button></div>}</div>
                 </> : <div className="m-auto px-6 py-16 text-center"><span className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-neutral-50 text-neutral-400"><Icon name="mail" className="size-6" /></span><h2 className="mt-4 font-semibold text-neutral-800">Pilih pesan untuk dibaca</h2><p className="mt-2 text-sm text-neutral-500">Atau tulis pesan baru untuk warga.</p><button type="button" onClick={() => openComposer()} className="mt-5 min-h-10 rounded-xl bg-primary-600 px-4 text-sm font-semibold text-white hover:bg-primary-700">Tulis Pesan</button></div>}
               </article>
             </section>
