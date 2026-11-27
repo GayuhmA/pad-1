@@ -1,12 +1,13 @@
 'use client';
 
-import Image from 'next/image';
 import Link from 'next/link';
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { BrandLogo } from '@/components/BrandLogo';
 import { useAuthStore } from '@/stores/auth-store';
 import { DashboardOverviewSkeleton } from '@/components/management/DashboardLoadingSkeleton';
+import { LogoManagementModal } from '@/components/management/LogoManagementModal';
 import { createMatch, getManagementDashboard, getMatchOptions } from '@/lib/api/management-dashboard';
 import { ApiRequestError } from '@/lib/api/client';
 import { STALE_TIME } from '@/lib/query-client';
@@ -94,7 +95,7 @@ const navigation: Record<Role, { label: string; groups: { title: string; items: 
   },
 };
 
-function Sidebar({ role, userName, activeItem, onClose }: { role: Role; userName: string; activeItem: Exclude<NavigationKey, null>; onClose?: () => void }) {
+function Sidebar({ role, userName, activeItem, onClose }: { role: Role; userName: string; activeItem: NavigationKey; onClose?: () => void }) {
   const router = useRouter();
   const logout = useAuthStore((state) => state.logout);
   const accountMenuRef = useRef<HTMLDivElement>(null);
@@ -137,7 +138,7 @@ function Sidebar({ role, userName, activeItem, onClose }: { role: Role; userName
     <aside className="flex h-full w-69 shrink-0 flex-col border-r border-primary-100 bg-white">
       <div className="flex h-25 items-center gap-3 px-7">
         <Link href="/dashboard" onClick={onClose} aria-label="Kembali ke dashboard" className="flex items-center gap-3">
-          <Image src="/images/logo.png" alt="" width={54} height={54} className="size-13.5 object-contain" priority />
+          <BrandLogo alt="" width={54} height={54} className="size-13.5 object-contain" priority />
           <span className="text-[11px] font-bold leading-tight tracking-[0.16em] text-primary-700">RUANG<br />{role === 'admin' ? 'ADMIN' : 'PANITIA'}</span>
         </Link>
         {onClose && <button type="button" aria-label="Tutup menu" onClick={onClose} className="ml-auto rounded-lg p-2 text-neutral-500 hover:bg-neutral-50 lg:hidden"><Icon name="close" /></button>}
@@ -189,7 +190,7 @@ function Sidebar({ role, userName, activeItem, onClose }: { role: Role; userName
         {accountMenuOpen && <div role="menu" aria-label="Menu akun" className="absolute right-4 bottom-[calc(100%+8px)] left-4 z-50 overflow-hidden rounded-2xl border border-neutral-100 bg-white p-2 shadow-[0_12px_36px_rgba(22,22,29,0.14)]">
           <div className="px-3 py-2.5"><p className="truncate text-sm font-semibold text-neutral-900">{userName}</p><p className="mt-0.5 text-xs text-neutral-500">{config.label}</p></div>
           <div className="my-1 border-t border-neutral-100" />
-          <Link href="/profile" role="menuitem" onClick={() => { setAccountMenuOpen(false); onClose?.(); }} className="flex min-h-10 items-center gap-2.5 rounded-xl px-3 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-50">
+          <Link href="/dashboard/profil" role="menuitem" onClick={() => { setAccountMenuOpen(false); onClose?.(); }} className="flex min-h-10 items-center gap-2.5 rounded-xl px-3 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-50">
             <Icon name="users" className="size-4.25 text-neutral-400" />Profil &amp; akun
           </Link>
           {logoutError && <p role="alert" className="px-3 py-2 text-xs leading-5 text-error-100">{logoutError}</p>}
@@ -432,7 +433,7 @@ interface ManagementLayoutProps {
   role: Role;
   userName: string;
   title: string;
-  activeItem: Exclude<NavigationKey, null>;
+  activeItem: NavigationKey;
   children: ReactNode;
 }
 
@@ -465,6 +466,7 @@ export function ManagementDashboard({ role, userName }: { role: Role; userName: 
   const isAdmin = role === 'admin';
   const [tanggal, setTanggal] = useState(jakartaToday);
   const [showMatchModal, setShowMatchModal] = useState(false);
+  const [showLogoModal, setShowLogoModal] = useState(false);
 
   const dashboardQuery = useQuery({
     queryKey: [...queryKeys.managementDashboard(userId), role, tanggal] as const,
@@ -495,8 +497,19 @@ export function ManagementDashboard({ role, userName }: { role: Role; userName: 
   return <ManagementLayout role={role} userName={userName} title="Dashboard" activeItem="dashboard">
     <div className="mb-7 flex flex-wrap items-end justify-between gap-4 sm:mb-8">
       <div><p className="mb-2 text-sm font-medium text-primary-600">{isAdmin ? 'Pusat kendali acara' : 'Selamat datang kembali'}</p><h1 className="text-[26px] font-semibold tracking-tight text-neutral-900 sm:text-[32px]">{isAdmin ? 'Dashboard Admin' : 'Selamat Datang, Panitia'}</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-500">Semua yang perlu Anda pantau untuk menjaga acara berjalan lancar.</p></div>
+      {isAdmin && (
+        <button
+          type="button"
+          onClick={() => setShowLogoModal(true)}
+          className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-primary-200 bg-white px-4 text-sm font-semibold text-primary-700 shadow-2xs transition-colors hover:border-primary-300 hover:bg-primary-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
+        >
+          <Icon name="image" className="size-4.5 text-primary-600" />
+          Ganti Logo
+        </button>
+      )}
     </div>
     <ManagementContent data={dashboard} tanggal={displayedTanggal} loading={loading} error={loadError} onRetry={refresh} onDateChange={handleDateChange} onAddMatch={() => setShowMatchModal(true)} />
     {showMatchModal && <MatchFormModal onClose={() => setShowMatchModal(false)} onCreated={handleMatchCreated} />}
+    {isAdmin && <LogoManagementModal isOpen={showLogoModal} onClose={() => setShowLogoModal(false)} />}
   </ManagementLayout>;
 }

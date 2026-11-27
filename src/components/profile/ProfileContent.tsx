@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { Avatar } from '@/components/Avatar';
@@ -39,7 +39,15 @@ export function ProfileContent() {
   const [contactNotice, setContactNotice] = useState<string | null>(null);
   const submitLocked = useRef(false);
 
-  const isResident = Boolean(user) && getManagementRole(user?.role) === null;
+  const isManagementUser = Boolean(user) && getManagementRole(user?.role) !== null;
+  const isResident = Boolean(user) && !isManagementUser;
+
+  useEffect(() => {
+    if (isManagementUser) {
+      router.replace('/dashboard/profil');
+    }
+  }, [isManagementUser, router]);
+
   const kontakQuery = useQuery({
     queryKey: queryKeys.kontakPengurus(user?.id),
     queryFn: ({ signal }) => getKontakPengurus(signal).then((res) => res.data),
@@ -62,7 +70,7 @@ export function ProfileContent() {
     }
   }
 
-  if (!profile) return <PageSkeleton variant="profile" />;
+  if (!profile || isManagementUser) return <PageSkeleton variant="profile" />;
 
   return (
     <div className="bg-linear-to-b from-primary-100 to-white">

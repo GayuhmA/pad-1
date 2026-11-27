@@ -1,8 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
+import { BrandLogo } from '@/components/BrandLogo';
 import { Button } from '@/components/Button';
 import { useAppStore } from '@/stores/app-store';
 import { useNotificationStore } from '@/stores/notification-store';
@@ -40,9 +40,7 @@ export function Navbar() {
         {/* Logo */}
         <div className="flex-1 flex justify-start items-center">
           <Link href="/" className="block">
-            <Image
-              src="/images/logo.png"
-              alt="Logo"
+            <BrandLogo
               width={80}
               height={80}
               className="h-20 w-auto object-contain"

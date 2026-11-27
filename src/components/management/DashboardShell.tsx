@@ -21,12 +21,16 @@ interface RouteMeta {
     | 'panitia'
     | 'messages'
     | 'documentation'
-    | 'history';
+    | 'history'
+    | null;
   skeletonPage: ManagementSkeletonPage;
   adminOnly?: boolean;
 }
 
 function getRouteMeta(pathname: string): RouteMeta {
+  if (pathname.startsWith('/dashboard/profil')) {
+    return { title: 'Profil & Akun', activeItem: null, skeletonPage: 'dashboard' };
+  }
   if (pathname.startsWith('/dashboard/lomba')) {
     return { title: 'Kelola Lomba', activeItem: 'competitions', skeletonPage: 'competitions' };
   }

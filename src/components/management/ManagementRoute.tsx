@@ -6,6 +6,7 @@ import { DuesManagement } from '@/components/management/DuesManagement';
 import { DocumentationManagement } from '@/components/management/DocumentationManagement';
 import { HistoryManagement } from '@/components/management/HistoryManagement';
 import { ManagementDashboard } from '@/components/management/ManagementDashboard';
+import { ManagementProfile } from '@/components/management/ManagementProfile';
 import { MessageManagement } from '@/components/management/MessageManagement';
 import { PanitiaManagement } from '@/components/management/PanitiaManagement';
 import { RegistrationManagement } from '@/components/management/RegistrationManagement';
@@ -31,13 +32,13 @@ export function NoManagementAccess({ role }: { role: string }) {
   );
 }
 
-export function ManagementRoute({ page }: { page: 'dashboard' | 'competitions' | 'registrations' | 'dues' | 'warga' | 'panitia' | 'messages' | 'documentation' | 'history' }) {
+export function ManagementRoute({ page }: { page: 'dashboard' | 'competitions' | 'registrations' | 'dues' | 'warga' | 'panitia' | 'messages' | 'documentation' | 'history' | 'profile' }) {
   const { isReady } = useRequireManagementAuth();
   const user = useAuthStore((state) => state.user);
   const status = useAuthStore((state) => state.status);
 
   if (status === 'error' && !user) return <SessionStatus />;
-  if (!isReady || !user) return <PageSkeleton variant="management" managementPage={page} />;
+  if (!isReady || !user) return <PageSkeleton variant="management" managementPage={page === 'profile' ? 'dashboard' : page} />;
   const role: ManagementRole | null = getManagementRole(user.role);
   if (!role) return <NoManagementAccess role={user.role} />;
   if ((page === 'warga' || page === 'panitia') && role !== 'admin') {
@@ -45,6 +46,7 @@ export function ManagementRoute({ page }: { page: 'dashboard' | 'competitions' |
   }
 
   if (page === 'dashboard') return <ManagementDashboard role={role} userName={user.nama} />;
+  if (page === 'profile') return <ManagementProfile role={role} userName={user.nama} />;
   if (page === 'competitions') return <CompetitionManagement role={role} userName={user.nama} />;
   if (page === 'dues') return <DuesManagement role={role} userName={user.nama} />;
   if (page === 'warga') return <WargaManagement role={role} userName={user.nama} />;

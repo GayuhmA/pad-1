@@ -7,6 +7,7 @@ export const queryKeys = {
   transparansiIuran: (params: { page: number; status: string; search: string }) =>
     ['transparansi-iuran', params] as const,
   pengaturanPembayaran: ['pengaturan-pembayaran'] as const,
+  activeLogo: ['logo-aktif'] as const,
   historiList: ['histori', 'list'] as const,
   historiDetail: (id: number) => ['histori', 'detail', id] as const,
   albums: (periodeId?: number | null) => ['albums', periodeId ?? 'all'] as const,
@@ -42,5 +43,7 @@ export const queryKeys = {
   managementHistoriList: ['management', 'histori', 'list'] as const,
   managementHistoriDetail: (id: number) =>
     ['management', 'histori', 'detail', id] as const,
+  managementLogo: (params?: { search?: string; status?: string }) =>
+    ['management', 'logo', params ?? {}] as const,
 } as const;
 
