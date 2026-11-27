@@ -12,4 +12,5 @@ require('./management-dokumentasi-route.test.cjs');
 require('./management-histori-route.test.cjs');
 require('./management-admin-route.test.cjs');
 require('./logo-route.test.cjs');
+require('./download-route.test.cjs');
 

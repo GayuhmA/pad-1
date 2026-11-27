@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Image from 'next/image';
 import type { AlbumPhoto } from '@/lib/data/album-photos';
+import { downloadImage } from '@/lib/download-image';
 import { AlbumLightbox } from '@/components/AlbumLightbox';
 
 interface AlbumGalleryProps {
@@ -12,6 +13,19 @@ interface AlbumGalleryProps {
 
 export function AlbumGallery({ photos, title }: AlbumGalleryProps) {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  async function handleDownload(photo: AlbumPhoto) {
+    if (downloadingId === photo.id) return;
+    setDownloadingId(photo.id);
+    try {
+      await downloadImage(photo.src, photo.filename);
+    } catch (error) {
+      console.error('[AlbumGallery] gagal mengunduh foto:', error);
+    } finally {
+      setDownloadingId((current) => (current === photo.id ? null : current));
+    }
+  }
 
   if (photos.length === 0) {
     return (
@@ -46,15 +60,16 @@ export function AlbumGallery({ photos, title }: AlbumGalleryProps) {
               />
             </button>
             <div className="pointer-events-none absolute inset-0 bg-black/0 transition-colors group-hover:bg-black/20 group-has-[:focus-visible]:bg-black/20 motion-reduce:transition-none" />
-            <a
-              href={photo.src}
-              download={photo.filename}
+            <button
+              type="button"
+              onClick={() => void handleDownload(photo)}
+              disabled={downloadingId === photo.id}
               aria-label={`Unduh ${photo.alt.toLowerCase()}`}
               title={`Unduh ${photo.alt.toLowerCase()}`}
-              className="absolute right-3 bottom-3 inline-flex size-11 items-center justify-center rounded-xl bg-primary-600 text-white shadow-sm transition-[opacity,background-color] hover:bg-primary-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white motion-reduce:transition-none [@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover:opacity-100 group-has-[:focus-visible]:opacity-100"
+              className="absolute right-3 bottom-3 inline-flex size-11 cursor-pointer items-center justify-center rounded-xl bg-primary-600 text-white shadow-sm transition-[opacity,background-color] hover:bg-primary-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-wait disabled:opacity-60 motion-reduce:transition-none [@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover:opacity-100 group-has-[:focus-visible]:opacity-100"
             >
               <Image src="/icons/download.svg" alt="" width={24} height={24} />
-            </a>
+            </button>
           </li>
         ))}
       </ul>

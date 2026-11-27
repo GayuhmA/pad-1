@@ -7,6 +7,7 @@ import { Dropdown } from "@/components/Dropdown";
 import { Modal } from "@/components/Modal";
 import { PageSkeleton } from "@/components/skeletons/PageSkeleton";
 import { ApiRequestError } from "@/lib/api/client";
+import { downloadImage } from "@/lib/download-image";
 import {
   ajukanPembayaranIuran,
   getDaftarIuran,
@@ -108,6 +109,7 @@ export default function IuranPage() {
   const [isDragging, setIsDragging] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isDownloadingQris, setIsDownloadingQris] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [paymentSuccessModal, setPaymentSuccessModal] = useState<{
     billName: string;
@@ -347,19 +349,26 @@ export default function IuranPage() {
     }
   };
 
-  const handleDownloadQris = () => {
-    if (paymentSettings?.qris_image) {
-      const a = document.createElement("a");
-      a.href = paymentSettings.qris_image;
-      a.download = "qris-iuran.png";
-      a.target = "_blank";
-      a.rel = "noopener noreferrer";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+  const handleDownloadQris = async () => {
+    const qrisUrl = paymentSettings?.qris_image;
+    if (!qrisUrl) {
+      setToastMessage("File QRIS resmi belum tersedia dari backend.");
+      return;
+    }
+    if (isDownloadingQris) return;
+
+    setIsDownloadingQris(true);
+    try {
+      await downloadImage(qrisUrl, "qris-iuran");
       setToastMessage("File QRIS berhasil diunduh.");
-    } else {
-      alert("File QRIS resmi belum tersedia dari backend.");
+    } catch (error) {
+      setToastMessage(
+        error instanceof Error && error.message
+          ? error.message
+          : "Gagal mengunduh file QRIS. Silakan coba lagi.",
+      );
+    } finally {
+      setIsDownloadingQris(false);
     }
   };
 
@@ -771,10 +780,11 @@ export default function IuranPage() {
 
                     <button
                       type="button"
-                      onClick={handleDownloadQris}
-                      className="w-full bg-[#BA1B1B] hover:bg-primary-700 text-white font-bold text-sm md:text-base py-3 rounded-xl transition-all cursor-pointer shadow-xs active:scale-[0.99] mt-6"
+                      disabled={isDownloadingQris}
+                      onClick={() => void handleDownloadQris()}
+                      className="w-full bg-[#BA1B1B] hover:bg-primary-700 text-white font-bold text-sm md:text-base py-3 rounded-xl transition-all cursor-pointer shadow-xs active:scale-[0.99] mt-6 disabled:opacity-60 disabled:cursor-wait"
                     >
-                      Unduh QRIS
+                      {isDownloadingQris ? "Mengunduh..." : "Unduh QRIS"}
                     </button>
                   </div>
                 </div>
